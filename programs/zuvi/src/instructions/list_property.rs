@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Token, Transfer};
+use anchor_spl::token_interface::TokenAccount;
 use crate::errors::ZuviError;
 use crate::state::{Platform, PropertyListing, ListingStatus};
 
@@ -30,14 +31,14 @@ pub struct ListProperty<'info> {
         constraint = owner_usdc_account.owner == owner.key(),
         constraint = owner_usdc_account.mint == platform.usdc_mint
     )]
-    pub owner_usdc_account: Account<'info, TokenAccount>,
+    pub owner_usdc_account: InterfaceAccount<'info, TokenAccount>,
 
     #[account(
         mut,
         constraint = platform_usdc_account.owner == platform.fee_receiver,
         constraint = platform_usdc_account.mint == platform.usdc_mint
     )]
-    pub platform_usdc_account: Account<'info, TokenAccount>,
+    pub platform_usdc_account: InterfaceAccount<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,

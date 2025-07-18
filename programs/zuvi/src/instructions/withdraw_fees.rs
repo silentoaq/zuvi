@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Token, Transfer};
+use anchor_spl::token_interface::TokenAccount;
 use crate::errors::ZuviError;
 use crate::state::Platform;
 
@@ -19,13 +20,13 @@ pub struct WithdrawFees<'info> {
         constraint = platform_usdc_account.owner == platform.fee_receiver,
         constraint = platform_usdc_account.mint == platform.usdc_mint
     )]
-    pub platform_usdc_account: Account<'info, TokenAccount>,
+    pub platform_usdc_account: InterfaceAccount<'info, TokenAccount>,
 
     #[account(
         mut,
         constraint = recipient_usdc_account.mint == platform.usdc_mint
     )]
-    pub recipient_usdc_account: Account<'info, TokenAccount>,
+    pub recipient_usdc_account: InterfaceAccount<'info, TokenAccount>,
 
     /// CHECK: Fee receiver as signer
     #[account(

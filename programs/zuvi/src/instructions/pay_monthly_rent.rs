@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Token, Transfer};
+use anchor_spl::token_interface::TokenAccount;
 use crate::errors::ZuviError;
 use crate::state::{
     Platform, RentalContract, PaymentRecord,
@@ -30,21 +31,21 @@ pub struct PayMonthlyRent<'info> {
         constraint = tenant_usdc_account.owner == tenant.key(),
         constraint = tenant_usdc_account.mint == platform.usdc_mint
     )]
-    pub tenant_usdc_account: Account<'info, TokenAccount>,
+    pub tenant_usdc_account: InterfaceAccount<'info, TokenAccount>,
 
     #[account(
         mut,
         constraint = landlord_usdc_account.owner == contract.landlord,
         constraint = landlord_usdc_account.mint == platform.usdc_mint
     )]
-    pub landlord_usdc_account: Account<'info, TokenAccount>,
+    pub landlord_usdc_account: InterfaceAccount<'info, TokenAccount>,
 
     #[account(
         mut,
         constraint = platform_usdc_account.owner == platform.fee_receiver,
         constraint = platform_usdc_account.mint == platform.usdc_mint
     )]
-    pub platform_usdc_account: Account<'info, TokenAccount>,
+    pub platform_usdc_account: InterfaceAccount<'info, TokenAccount>,
 
     #[account(
         init,
@@ -114,7 +115,7 @@ pub fn pay_monthly_rent(
     payment_record.bump = ctx.bumps.payment_record;
 
     // 更新已支付月數
-    contract.paid_months = contract.paid_months.saturating_add(1);
+    contract.paid_months += 1;
 
     msg!("Monthly rent paid successfully");
     msg!("Month: {}", payment_month);

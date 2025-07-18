@@ -20,6 +20,7 @@ describe("zuvi", () => {
   // Test accounts
   let usdcMint: PublicKey;
   let platformPda: PublicKey;
+  let mintAuthority: Keypair;
   let landlord: Keypair;
   let tenant: Keypair;
   let feeReceiver: Keypair;
@@ -38,11 +39,13 @@ describe("zuvi", () => {
 
   before(async () => {
     // Generate test keypairs
+    mintAuthority = Keypair.generate();
     landlord = Keypair.generate();
     tenant = Keypair.generate();
     feeReceiver = Keypair.generate();
 
     // Airdrop SOL to test accounts
+    await provider.connection.requestAirdrop(mintAuthority.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL);
     await provider.connection.requestAirdrop(landlord.publicKey, 10 * anchor.web3.LAMPORTS_PER_SOL);
     await provider.connection.requestAirdrop(tenant.publicKey, 10 * anchor.web3.LAMPORTS_PER_SOL);
     await provider.connection.requestAirdrop(feeReceiver.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL);
@@ -53,8 +56,8 @@ describe("zuvi", () => {
     // Create mock USDC mint
     usdcMint = await createMint(
       provider.connection,
-      landlord,
-      provider.wallet.publicKey,
+      mintAuthority,  // payer
+      mintAuthority.publicKey,  // mint authority
       null,
       6 // USDC has 6 decimals
     );
@@ -84,19 +87,19 @@ describe("zuvi", () => {
     // Mint USDC to test accounts
     await mintTo(
       provider.connection,
-      landlord,
+      mintAuthority,  // payer
       usdcMint,
       landlordUsdcAccount.address,
-      provider.wallet.publicKey,
+      mintAuthority,  // mint authority (as Keypair)
       10_000_000_000 // 10,000 USDC
     );
 
     await mintTo(
       provider.connection,
-      tenant,
+      mintAuthority,  // payer
       usdcMint,
       tenantUsdcAccount.address,
-      provider.wallet.publicKey,
+      mintAuthority,  // mint authority (as Keypair)
       10_000_000_000 // 10,000 USDC
     );
 
@@ -118,7 +121,7 @@ describe("zuvi", () => {
   it("Initializes the platform", async () => {
     const tx = await program.methods
       .initializePlatform(FEES.listing, FEES.contract, FEES.payment)
-      .accounts({
+      .accountsPartial({
         platform: platformPda,
         authority: provider.wallet.publicKey,
         feeReceiver: feeReceiver.publicKey,
@@ -158,7 +161,7 @@ describe("zuvi", () => {
         depositMonths,
         propertyDetailsHash
       )
-      .accounts({
+      .accountsPartial({
         platform: platformPda,
         listing: listingPda,
         owner: landlord.publicKey,
@@ -179,7 +182,7 @@ describe("zuvi", () => {
     assert.equal(listing.monthlyRent.toNumber(), monthlyRent.toNumber());
     assert.equal(listing.depositMonths, depositMonths);
     assert.equal(listing.propertyDetailsHash, propertyDetailsHash);
-    assert.equal(listing.status, 0); // Available
+    assert.deepEqual(listing.status, { available: {} }); // Anchor enum format
   });
 
   // 可以繼續添加更多測試...

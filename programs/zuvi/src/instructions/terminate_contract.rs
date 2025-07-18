@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Token, Transfer};
+use anchor_spl::token_interface::TokenAccount;
 use crate::errors::ZuviError;
 use crate::state::{
     PropertyListing, RentalContract, EscrowAccount, PaymentRecord,
@@ -43,7 +44,7 @@ pub struct TerminateContract<'info> {
         mut,
         constraint = tenant_usdc_account.owner == contract.tenant
     )]
-    pub tenant_usdc_account: Account<'info, TokenAccount>,
+    pub tenant_usdc_account: InterfaceAccount<'info, TokenAccount>,
 
     #[account(
         init,
@@ -69,8 +70,11 @@ pub struct TerminateContract<'info> {
 pub fn terminate_contract(ctx: Context<TerminateContract>, reason: String) -> Result<()> {
     let contract = &mut ctx.accounts.contract;
     let listing = &mut ctx.accounts.listing;
-    let escrow_account = &mut ctx.accounts.escrow_account;
     let clock = &ctx.accounts.clock;
+    
+    // 先保存需要的值
+    let escrow_key = ctx.accounts.escrow_account.key();
+    let escrow_account = &mut ctx.accounts.escrow_account;
 
     // 驗證原因長度
     require!(reason.len() <= 256, ZuviError::StringTooLong);
@@ -79,10 +83,10 @@ pub fn terminate_contract(ctx: Context<TerminateContract>, reason: String) -> Re
     let refund_amount = escrow_account.deposit_amount;
 
     // 從託管賬戶退還押金給租客
-    let escrow_key = contract.key();
+    let escrow_contract_key = contract.key();
     let seeds = &[
         b"escrow",
-        escrow_key.as_ref(),
+        escrow_contract_key.as_ref(),
         &[ctx.bumps.escrow_authority],
     ];
     let signer_seeds = &[&seeds[..]];
@@ -101,7 +105,7 @@ pub fn terminate_contract(ctx: Context<TerminateContract>, reason: String) -> Re
     refund_record.contract = contract.key();
     refund_record.payment_type = PaymentType::DepositRefund;
     refund_record.amount = refund_amount;
-    refund_record.payer = ctx.accounts.escrow_account.key();
+    refund_record.payer = escrow_key;
     refund_record.receiver = contract.tenant;
     refund_record.payment_month = None;
     refund_record.paid_at = clock.unix_timestamp;

@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Token, Transfer};
+use anchor_spl::token_interface::TokenAccount;
 use crate::errors::ZuviError;
 use crate::state::{
     Platform, PropertyListing, RentalContract, PaymentRecord,
@@ -35,7 +36,7 @@ pub struct SignContractAndPay<'info> {
         constraint = tenant_usdc_account.owner == tenant.key(),
         constraint = tenant_usdc_account.mint == platform.usdc_mint
     )]
-    pub tenant_usdc_account: Account<'info, TokenAccount>,
+    pub tenant_usdc_account: InterfaceAccount<'info, TokenAccount>,
 
     /// CHECK: 託管賬戶 PDA
     #[account(
@@ -50,7 +51,7 @@ pub struct SignContractAndPay<'info> {
         constraint = platform_usdc_account.owner == platform.fee_receiver,
         constraint = platform_usdc_account.mint == platform.usdc_mint
     )]
-    pub platform_usdc_account: Account<'info, TokenAccount>,
+    pub platform_usdc_account: InterfaceAccount<'info, TokenAccount>,
 
     #[account(
         init,

@@ -271,3 +271,30 @@ impl EscrowAccount {
         1 + // bump
         16; // padding
 }
+
+#[event]
+pub struct PropertyListed {
+    pub listing: Pubkey,
+    pub owner: Pubkey,
+    pub property_id: String,
+    pub monthly_rent: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct ContractSigned {
+    pub contract: Pubkey,
+    pub landlord: Pubkey,
+    pub tenant: Pubkey,
+    pub total_payment: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct RentPaid {
+    pub contract: Pubkey,
+    pub tenant: Pubkey,
+    pub amount: u64,
+    pub payment_month: String,
+    pub timestamp: i64,
+}

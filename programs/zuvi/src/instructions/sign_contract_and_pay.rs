@@ -1,10 +1,11 @@
 use anchor_lang::prelude::*;
+use anchor_lang::emit;
 use anchor_spl::token::{self, Token, Transfer};
 use anchor_spl::token_interface::TokenAccount;
 use crate::errors::ZuviError;
 use crate::state::{
     Platform, PropertyListing, RentalContract, PaymentRecord,
-    ContractStatus, ListingStatus, PaymentType
+    ContractStatus, ListingStatus, PaymentType,ContractSigned  
 };
 
 #[derive(Accounts)]
@@ -152,6 +153,14 @@ pub fn sign_contract_and_pay(ctx: Context<SignContractAndPay>) -> Result<()> {
     msg!("Deposit: {} USDC", contract.deposit_amount);
     msg!("First month rent: {} USDC", contract.monthly_rent);
     msg!("Platform fee: {} USDC", half_contract_fee);
+
+    emit!(ContractSigned {
+        contract: contract.key(),
+        landlord: contract.landlord,
+        tenant: contract.tenant,
+        total_payment,
+        timestamp: clock.unix_timestamp,
+    });
 
     Ok(())
 }

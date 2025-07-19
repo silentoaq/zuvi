@@ -1,8 +1,9 @@
 use anchor_lang::prelude::*;
+use anchor_lang::emit;
 use anchor_spl::token::{self, Token, Transfer};
 use anchor_spl::token_interface::TokenAccount;
 use crate::errors::ZuviError;
-use crate::state::{Platform, PropertyListing, ListingStatus};
+use crate::state::{Platform, PropertyListing, ListingStatus, PropertyListed};
 
 #[derive(Accounts)]
 #[instruction(property_id: String)]
@@ -94,6 +95,14 @@ pub fn list_property(
     msg!("Property ID: {}", listing.property_id);
     msg!("Monthly rent: {} USDC", monthly_rent);
     msg!("Deposit: {} months", deposit_months);
+
+    emit!(PropertyListed {
+        listing: listing.key(),
+        owner: listing.owner,
+        property_id: listing.property_id.clone(),
+        monthly_rent: listing.monthly_rent,
+        timestamp: clock.unix_timestamp,
+    });
 
     Ok(())
 }

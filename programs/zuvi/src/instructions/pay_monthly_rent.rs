@@ -1,10 +1,11 @@
 use anchor_lang::prelude::*;
+use anchor_lang::emit;
 use anchor_spl::token::{self, Token, Transfer};
 use anchor_spl::token_interface::TokenAccount;
 use crate::errors::ZuviError;
 use crate::state::{
     Platform, RentalContract, PaymentRecord,
-    ContractStatus, PaymentType
+    ContractStatus, PaymentType,RentPaid
 };
 
 #[derive(Accounts)]
@@ -121,6 +122,14 @@ pub fn pay_monthly_rent(
     msg!("Month: {}", payment_month);
     msg!("Amount: {} USDC", contract.monthly_rent);
     msg!("Platform fee: {} USDC", platform.payment_fee);
+
+    emit!(RentPaid {
+        contract: contract.key(),
+        tenant: contract.tenant,
+        amount: payment_record.amount,
+        payment_month,
+        timestamp: clock.unix_timestamp,
+    });
 
     Ok(())
 }

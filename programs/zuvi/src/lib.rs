@@ -95,4 +95,21 @@ pub mod zuvi {
     pub fn withdraw_fees(ctx: Context<WithdrawFees>, amount: u64) -> Result<()> {
         instructions::withdraw_fees(ctx, amount)
     }
+
+    /// 提出爭議
+    pub fn report_dispute(
+        ctx: Context<ReportDispute>,
+        reason: String,
+        evidence_hash: String,
+    ) -> Result<()> {
+        instructions::report_dispute(ctx, reason, evidence_hash)
+    }
+
+    /// 回應爭議
+    pub fn respond_to_dispute(
+        ctx: Context<RespondToDispute>,
+        response_evidence_hash: String,
+    ) -> Result<()> {
+        instructions::respond_to_dispute(ctx, response_evidence_hash)
+    }
 }

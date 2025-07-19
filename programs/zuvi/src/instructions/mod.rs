@@ -9,6 +9,8 @@ pub mod pay_monthly_rent;
 pub mod terminate_contract;
 pub mod delist_property;
 pub mod withdraw_fees;
+pub mod report_dispute;
+pub mod respond_to_dispute;
 
 pub use initialize_platform::*;
 pub use list_property::*;
@@ -21,3 +23,5 @@ pub use pay_monthly_rent::*;
 pub use terminate_contract::*;
 pub use delist_property::*;
 pub use withdraw_fees::*;
+pub use report_dispute::*;
+pub use respond_to_dispute::*;

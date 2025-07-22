@@ -1,0 +1,2004 @@
+{
+  "address": "2h2Gw1oK7zNHed7GBXFShqvJGzBaVkPEMB7EDRUcVdct",
+  "metadata": {
+    "name": "zuvi",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Solana rental platform with VC integration"
+  },
+  "instructions": [
+    {
+      "name": "accept_application",
+      "docs": [
+        "房東接受申請"
+      ],
+      "discriminator": [
+        32,
+        123,
+        133,
+        159,
+        182,
+        237,
+        161,
+        163
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "application",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "apply_for_rental",
+      "docs": [
+        "申請租房"
+      ],
+      "discriminator": [
+        61,
+        26,
+        207,
+        110,
+        237,
+        183,
+        191,
+        74
+      ],
+      "accounts": [
+        {
+          "name": "listing"
+        },
+        {
+          "name": "application",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  112,
+                  112,
+                  108,
+                  105,
+                  99,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "listing"
+              },
+              {
+                "kind": "account",
+                "path": "applicant"
+              }
+            ]
+          }
+        },
+        {
+          "name": "applicant",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "applicant_attestation",
+          "type": "string"
+        },
+        {
+          "name": "proposed_terms",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "create_contract",
+      "docs": [
+        "創建租賃合約"
+      ],
+      "discriminator": [
+        244,
+        48,
+        244,
+        178,
+        216,
+        88,
+        122,
+        52
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "application"
+        },
+        {
+          "name": "contract",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  116,
+                  114,
+                  97,
+                  99,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "listing"
+              },
+              {
+                "kind": "account",
+                "path": "application.applicant",
+                "account": "RentalApplication"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escrow_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "contract"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "start_date",
+          "type": "i64"
+        },
+        {
+          "name": "end_date",
+          "type": "i64"
+        },
+        {
+          "name": "payment_day",
+          "type": "u8"
+        },
+        {
+          "name": "contract_hash",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "delist_property",
+      "docs": [
+        "下架房源"
+      ],
+      "discriminator": [
+        239,
+        82,
+        222,
+        180,
+        186,
+        53,
+        144,
+        15
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_platform",
+      "docs": [
+        "初始化平台"
+      ],
+      "discriminator": [
+        119,
+        201,
+        101,
+        45,
+        75,
+        122,
+        89,
+        3
+      ],
+      "accounts": [
+        {
+          "name": "platform",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "fee_receiver"
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "listing_fee",
+          "type": "u64"
+        },
+        {
+          "name": "contract_fee",
+          "type": "u64"
+        },
+        {
+          "name": "payment_fee",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "list_property",
+      "docs": [
+        "發布房源"
+      ],
+      "discriminator": [
+        254,
+        101,
+        42,
+        174,
+        220,
+        160,
+        42,
+        82
+      ],
+      "accounts": [
+        {
+          "name": "platform",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "property_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "owner_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "platform_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "property_id",
+          "type": "string"
+        },
+        {
+          "name": "owner_attestation",
+          "type": "string"
+        },
+        {
+          "name": "monthly_rent",
+          "type": "u64"
+        },
+        {
+          "name": "deposit_months",
+          "type": "u8"
+        },
+        {
+          "name": "property_details_hash",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "pay_monthly_rent",
+      "docs": [
+        "支付月租"
+      ],
+      "discriminator": [
+        144,
+        48,
+        219,
+        104,
+        253,
+        102,
+        160,
+        11
+      ],
+      "accounts": [
+        {
+          "name": "platform",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "contract",
+          "writable": true
+        },
+        {
+          "name": "tenant",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "tenant_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "landlord_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "platform_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "payment_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "contract"
+              },
+              {
+                "kind": "arg",
+                "path": "payment_month"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "payment_month",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "reject_application",
+      "docs": [
+        "房東拒絕申請"
+      ],
+      "discriminator": [
+        85,
+        73,
+        224,
+        47,
+        9,
+        184,
+        39,
+        217
+      ],
+      "accounts": [
+        {
+          "name": "listing"
+        },
+        {
+          "name": "application",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "report_dispute",
+      "docs": [
+        "提出爭議"
+      ],
+      "discriminator": [
+        229,
+        114,
+        46,
+        235,
+        151,
+        188,
+        5,
+        142
+      ],
+      "accounts": [
+        {
+          "name": "contract"
+        },
+        {
+          "name": "initiator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "dispute_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "contract"
+              },
+              {
+                "kind": "account",
+                "path": "initiator"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "reason",
+          "type": "string"
+        },
+        {
+          "name": "evidence_hash",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "respond_to_dispute",
+      "docs": [
+        "回應爭議"
+      ],
+      "discriminator": [
+        212,
+        2,
+        194,
+        244,
+        37,
+        73,
+        173,
+        201
+      ],
+      "accounts": [
+        {
+          "name": "dispute_record",
+          "writable": true
+        },
+        {
+          "name": "respondent",
+          "signer": true
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "response_evidence_hash",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "sign_contract_and_pay",
+      "docs": [
+        "租客簽署合約並支付押金+首月租金"
+      ],
+      "discriminator": [
+        215,
+        129,
+        7,
+        181,
+        238,
+        118,
+        172,
+        195
+      ],
+      "accounts": [
+        {
+          "name": "platform",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "contract",
+          "writable": true
+        },
+        {
+          "name": "tenant",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "tenant_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "landlord_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "escrow_token_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "contract"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escrow_pda",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "contract"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "platform_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "deposit_payment_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "contract"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "first_month_payment_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "contract"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  105,
+                  114,
+                  115,
+                  116,
+                  95,
+                  109,
+                  111,
+                  110,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "terminate_contract",
+      "docs": [
+        "正常退租"
+      ],
+      "discriminator": [
+        39,
+        195,
+        134,
+        151,
+        240,
+        183,
+        194,
+        205
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true
+        },
+        {
+          "name": "contract",
+          "writable": true
+        },
+        {
+          "name": "escrow_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "contract"
+              }
+            ]
+          }
+        },
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "escrow_token_account",
+          "writable": true
+        },
+        {
+          "name": "tenant_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "refund_payment_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  121,
+                  109,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "contract"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  102,
+                  117,
+                  110,
+                  100
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "escrow_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "contract"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "reason",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_fees",
+      "docs": [
+        "提取平台費用"
+      ],
+      "discriminator": [
+        198,
+        212,
+        171,
+        109,
+        144,
+        215,
+        174,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "platform",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "platform_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "recipient_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "fee_receiver",
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "DisputeRecord",
+      "discriminator": [
+        198,
+        199,
+        79,
+        209,
+        12,
+        215,
+        34,
+        47
+      ]
+    },
+    {
+      "name": "EscrowAccount",
+      "discriminator": [
+        36,
+        69,
+        48,
+        18,
+        128,
+        225,
+        125,
+        135
+      ]
+    },
+    {
+      "name": "PaymentRecord",
+      "discriminator": [
+        202,
+        168,
+        56,
+        249,
+        127,
+        226,
+        86,
+        226
+      ]
+    },
+    {
+      "name": "Platform",
+      "discriminator": [
+        77,
+        92,
+        204,
+        58,
+        187,
+        98,
+        91,
+        12
+      ]
+    },
+    {
+      "name": "PropertyListing",
+      "discriminator": [
+        174,
+        25,
+        33,
+        12,
+        133,
+        179,
+        107,
+        36
+      ]
+    },
+    {
+      "name": "RentalApplication",
+      "discriminator": [
+        79,
+        198,
+        211,
+        18,
+        226,
+        157,
+        162,
+        22
+      ]
+    },
+    {
+      "name": "RentalContract",
+      "discriminator": [
+        45,
+        116,
+        9,
+        6,
+        145,
+        34,
+        166,
+        125
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "ContractSigned",
+      "discriminator": [
+        41,
+        58,
+        198,
+        149,
+        37,
+        119,
+        227,
+        182
+      ]
+    },
+    {
+      "name": "DisputeRaised",
+      "discriminator": [
+        246,
+        167,
+        109,
+        37,
+        142,
+        45,
+        38,
+        176
+      ]
+    },
+    {
+      "name": "DisputeResolved",
+      "discriminator": [
+        121,
+        64,
+        249,
+        153,
+        139,
+        128,
+        236,
+        187
+      ]
+    },
+    {
+      "name": "PropertyListed",
+      "discriminator": [
+        33,
+        100,
+        200,
+        151,
+        150,
+        150,
+        33,
+        145
+      ]
+    },
+    {
+      "name": "RentPaid",
+      "discriminator": [
+        140,
+        29,
+        172,
+        69,
+        152,
+        38,
+        73,
+        241
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "PlatformAlreadyInitialized",
+      "msg": "平台已經初始化"
+    },
+    {
+      "code": 6001,
+      "name": "PlatformNotInitialized",
+      "msg": "平台尚未初始化"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidFeeAmount",
+      "msg": "無效的費用金額"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidPropertyId",
+      "msg": "無效的房產 ID"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidAttestation",
+      "msg": "無效的 attestation"
+    },
+    {
+      "code": 6005,
+      "name": "PropertyAlreadyListed",
+      "msg": "房產已經上架"
+    },
+    {
+      "code": 6006,
+      "name": "ListingNotFound",
+      "msg": "房源不存在"
+    },
+    {
+      "code": 6007,
+      "name": "InvalidListingStatus",
+      "msg": "房源狀態不正確"
+    },
+    {
+      "code": 6008,
+      "name": "NotPropertyOwner",
+      "msg": "您不是房源的擁有者"
+    },
+    {
+      "code": 6009,
+      "name": "ApplicationNotFound",
+      "msg": "申請不存在"
+    },
+    {
+      "code": 6010,
+      "name": "InvalidApplicationStatus",
+      "msg": "申請狀態不正確"
+    },
+    {
+      "code": 6011,
+      "name": "NotApplicant",
+      "msg": "您不是申請人"
+    },
+    {
+      "code": 6012,
+      "name": "ContractNotFound",
+      "msg": "合約不存在"
+    },
+    {
+      "code": 6013,
+      "name": "InvalidContractStatus",
+      "msg": "合約狀態不正確"
+    },
+    {
+      "code": 6014,
+      "name": "NotContractParty",
+      "msg": "您不是合約的參與方"
+    },
+    {
+      "code": 6015,
+      "name": "InvalidPaymentDay",
+      "msg": "無效的付款日期"
+    },
+    {
+      "code": 6016,
+      "name": "InvalidContractDuration",
+      "msg": "無效的租約期限"
+    },
+    {
+      "code": 6017,
+      "name": "ContractStartDateMustBeFuture",
+      "msg": "租約開始日期必須在未來"
+    },
+    {
+      "code": 6018,
+      "name": "ContractEndDateMustBeAfterStart",
+      "msg": "租約結束日期必須在開始日期之後"
+    },
+    {
+      "code": 6019,
+      "name": "DepositMustBeGreaterThanZero",
+      "msg": "押金必須大於零"
+    },
+    {
+      "code": 6020,
+      "name": "RentMustBeGreaterThanZero",
+      "msg": "月租金必須大於零"
+    },
+    {
+      "code": 6021,
+      "name": "IncorrectPaymentAmount",
+      "msg": "支付金額不正確"
+    },
+    {
+      "code": 6022,
+      "name": "RentAlreadyPaidForMonth",
+      "msg": "本月租金已支付"
+    },
+    {
+      "code": 6023,
+      "name": "ContractNotStarted",
+      "msg": "合約尚未開始"
+    },
+    {
+      "code": 6024,
+      "name": "ContractEnded",
+      "msg": "合約已經結束"
+    },
+    {
+      "code": 6025,
+      "name": "DepositAlreadyRefunded",
+      "msg": "押金已經退還"
+    },
+    {
+      "code": 6026,
+      "name": "UnpaidRentExists",
+      "msg": "尚有未支付的租金"
+    },
+    {
+      "code": 6027,
+      "name": "Unauthorized",
+      "msg": "無權限執行此操作"
+    },
+    {
+      "code": 6028,
+      "name": "InsufficientBalance",
+      "msg": "餘額不足"
+    },
+    {
+      "code": 6029,
+      "name": "InvalidWithdrawAmount",
+      "msg": "無效的提取金額"
+    },
+    {
+      "code": 6030,
+      "name": "StringTooLong",
+      "msg": "字串長度超過限制"
+    },
+    {
+      "code": 6031,
+      "name": "InvalidDisputeStatus",
+      "msg": "爭議狀態不正確"
+    },
+    {
+      "code": 6032,
+      "name": "DisputeAlreadyExists",
+      "msg": "爭議已存在"
+    },
+    {
+      "code": 6033,
+      "name": "DisputeNotFound",
+      "msg": "爭議不存在"
+    }
+  ],
+  "types": [
+    {
+      "name": "ApplicationStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Pending"
+          },
+          {
+            "name": "Accepted"
+          },
+          {
+            "name": "Rejected"
+          },
+          {
+            "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ContractSigned",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "contract",
+            "type": "pubkey"
+          },
+          {
+            "name": "landlord",
+            "type": "pubkey"
+          },
+          {
+            "name": "tenant",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_payment",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ContractStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "PendingSignature"
+          },
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Terminated"
+          },
+          {
+            "name": "Completed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DisputeRaised",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dispute_id",
+            "type": "pubkey"
+          },
+          {
+            "name": "contract",
+            "type": "pubkey"
+          },
+          {
+            "name": "initiated_by",
+            "type": "pubkey"
+          },
+          {
+            "name": "reason",
+            "type": "string"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DisputeRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dispute_id",
+            "type": "pubkey"
+          },
+          {
+            "name": "contract",
+            "type": "pubkey"
+          },
+          {
+            "name": "initiated_by",
+            "type": "pubkey"
+          },
+          {
+            "name": "respondent",
+            "type": "pubkey"
+          },
+          {
+            "name": "reason",
+            "type": "string"
+          },
+          {
+            "name": "evidence_hash",
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "DisputeStatus"
+              }
+            }
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "updated_at",
+            "type": "i64"
+          },
+          {
+            "name": "resolution_notes",
+            "type": {
+              "option": "string"
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DisputeResolved",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dispute_id",
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "DisputeStatus"
+              }
+            }
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DisputeStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "UnderReview"
+          },
+          {
+            "name": "Resolved"
+          },
+          {
+            "name": "Withdrawn"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EscrowAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "contract",
+            "type": "pubkey"
+          },
+          {
+            "name": "deposit_amount",
+            "type": "u64"
+          },
+          {
+            "name": "deposit_refunded",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ListingStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Available"
+          },
+          {
+            "name": "Rented"
+          },
+          {
+            "name": "Delisted"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PaymentRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "contract",
+            "type": "pubkey"
+          },
+          {
+            "name": "payment_type",
+            "type": {
+              "defined": {
+                "name": "PaymentType"
+              }
+            }
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "receiver",
+            "type": "pubkey"
+          },
+          {
+            "name": "payment_month",
+            "type": {
+              "option": "string"
+            }
+          },
+          {
+            "name": "paid_at",
+            "type": "i64"
+          },
+          {
+            "name": "transaction_signature",
+            "type": "string"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PaymentType",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Deposit"
+          },
+          {
+            "name": "FirstMonth"
+          },
+          {
+            "name": "MonthlyRent"
+          },
+          {
+            "name": "DepositRefund"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Platform",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_receiver",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing_fee",
+            "type": "u64"
+          },
+          {
+            "name": "contract_fee",
+            "type": "u64"
+          },
+          {
+            "name": "payment_fee",
+            "type": "u64"
+          },
+          {
+            "name": "total_fees_collected",
+            "type": "u64"
+          },
+          {
+            "name": "is_initialized",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PropertyListed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "property_id",
+            "type": "string"
+          },
+          {
+            "name": "monthly_rent",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PropertyListing",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "property_id",
+            "type": "string"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner_attestation",
+            "type": "string"
+          },
+          {
+            "name": "monthly_rent",
+            "type": "u64"
+          },
+          {
+            "name": "deposit_months",
+            "type": "u8"
+          },
+          {
+            "name": "property_details_hash",
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "ListingStatus"
+              }
+            }
+          },
+          {
+            "name": "current_tenant",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "current_contract",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RentPaid",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "contract",
+            "type": "pubkey"
+          },
+          {
+            "name": "tenant",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "payment_month",
+            "type": "string"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RentalApplication",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "applicant",
+            "type": "pubkey"
+          },
+          {
+            "name": "applicant_attestation",
+            "type": "string"
+          },
+          {
+            "name": "proposed_terms",
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "ApplicationStatus"
+              }
+            }
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "updated_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RentalContract",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "landlord",
+            "type": "pubkey"
+          },
+          {
+            "name": "tenant",
+            "type": "pubkey"
+          },
+          {
+            "name": "monthly_rent",
+            "type": "u64"
+          },
+          {
+            "name": "deposit_amount",
+            "type": "u64"
+          },
+          {
+            "name": "start_date",
+            "type": "i64"
+          },
+          {
+            "name": "end_date",
+            "type": "i64"
+          },
+          {
+            "name": "payment_day",
+            "type": "u8"
+          },
+          {
+            "name": "contract_hash",
+            "type": "string"
+          },
+          {
+            "name": "escrow_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "ContractStatus"
+              }
+            }
+          },
+          {
+            "name": "paid_months",
+            "type": "u16"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -8,28 +8,34 @@ import { createLogger } from '../utils/logger.ts';
 const router = express.Router();
 const logger = createLogger();
 
-// Solana 連接
-const connection = new Connection(`https://${process.env.RPC_ROOT}`);
-const programId = new PublicKey(process.env.ZUVI_PROGRAM_ID!);
+let connection: Connection;
+let programId: PublicKey;
 
-// 取得所有房源
+const initializeConnection = () => {
+  if (!connection) {
+    connection = new Connection(`https://${process.env.RPC_ROOT}`);
+  }
+  if (!programId) {
+    programId = new PublicKey(process.env.ZUVI_PROGRAM_ID!);
+  }
+};
+
 router.get('/', async (req, res) => {
   try {
-    // 使用只讀 provider
+    initializeConnection();
+    
     const provider = new AnchorProvider(
       connection,
-      {} as any, // 只讀操作不需要錢包
+      {} as any,
       { commitment: 'confirmed' }
     );
     
     const program = new Program<Zuvi>(IDL as any, provider);
     
-    // 獲取所有 PropertyListing 帳戶
     const listings = await program.account.propertyListing.all();
     
-    // 過濾並格式化資料
     const formattedListings = listings
-      .filter(item => item.account.status.available !== undefined) // 只顯示可租房源
+      .filter(item => item.account.status.available !== undefined)
       .map(item => ({
         publicKey: item.publicKey.toString(),
         propertyId: item.account.propertyId,
@@ -53,12 +59,12 @@ router.get('/', async (req, res) => {
   }
 });
 
-// 取得單一房源詳情
 router.get('/:propertyId', async (req, res) => {
   try {
+    initializeConnection();
+    
     const { propertyId } = req.params;
     
-    // 計算 PDA
     const [listingPda] = PublicKey.findProgramAddressSync(
       [Buffer.from('listing'), Buffer.from(propertyId)],
       programId

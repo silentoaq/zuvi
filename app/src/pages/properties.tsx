@@ -30,7 +30,7 @@ export function PropertiesPage() {
         setListings(data.listings);
       } catch (err) {
         console.error("Failed to fetch properties:", err);
-        setError(err instanceof Error ? err.message : "Unknown error");
+        setError(err instanceof Error ? err.message : "載入失敗");
       } finally {
         setLoading(false);
       }
@@ -41,75 +41,69 @@ export function PropertiesPage() {
 
   if (loading) {
     return (
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {[1, 2, 3].map((i) => (
-          <Card key={i}>
-            <CardHeader>
-              <Skeleton className="h-4 w-2/3" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-4 w-full mb-2" />
-              <Skeleton className="h-4 w-1/2" />
-            </CardContent>
-          </Card>
-        ))}
+      <div className="space-y-6">
+        <h1 className="text-3xl font-bold">房源市場</h1>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader>
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-1/2 mt-2" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-20 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="text-center py-8">
-        <p className="text-destructive">載入失敗：{error}</p>
-      </div>
-    );
-  }
-
-  if (listings.length === 0) {
-    return (
-      <div className="text-center py-16">
-        <p className="text-muted-foreground text-lg mb-4">目前沒有房源</p>
-        <Link 
-          to="/list-property" 
-          className="text-primary hover:underline"
-        >
-          成為第一個發布房源的房東
-        </Link>
+      <div className="text-center py-12">
+        <p className="text-destructive">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      {listings.map((listing) => (
-        <Link key={listing.publicKey} to={`/property/${listing.propertyId}`}>
-          <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-            <CardHeader>
-              <CardTitle className="text-lg">
-                房源 {listing.propertyId.slice(0, 8)}...
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">月租金</span>
-                  <span className="font-medium">{listing.monthlyRent} USDC</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">押金</span>
-                  <span className="font-medium">{listing.depositMonths} 個月</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">發布時間</span>
-                  <span className="font-medium">
-                    {new Date(listing.createdAt * 1000).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-      ))}
+    <div className="space-y-6">
+      <h1 className="text-3xl font-bold">房源市場</h1>
+      
+      {listings.length === 0 ? (
+        <Card>
+          <CardContent className="text-center py-12">
+            <p className="text-muted-foreground">目前沒有可租房源</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {listings.map((listing) => (
+            <Link key={listing.publicKey} to={`/property/${listing.propertyId}`}>
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+                <CardHeader>
+                  <CardTitle className="text-lg">
+                    房源 #{listing.propertyId.slice(0, 8)}
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    月租: {listing.monthlyRent} USDC
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 text-sm">
+                    <p>押金: {listing.depositMonths} 個月</p>
+                    <p className="text-xs text-muted-foreground">
+                      發布於 {new Date(listing.createdAt * 1000).toLocaleDateString()}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

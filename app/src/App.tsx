@@ -4,10 +4,9 @@ import { WalletProvider } from "@/providers/wallet-provider";
 import { Layout } from "@/components/layout";
 import { ProtectedRoute } from "@/components/protected-route";
 import { PropertiesPage } from "@/pages/properties";
-import { ListPropertyPage } from "@/pages/list-property";
-import { MyPropertiesPage } from "@/pages/my-properties";
-import { MyContractsPage } from "@/pages/my-contracts";
 import { PropertyDetailPage } from "@/pages/property-detail";
+import { DashboardPage } from "@/pages/dashboard";
+import { PublishPropertyPage } from "@/pages/publish-property";
 import { Toaster } from "@/components/ui/sonner";
 
 function App() {
@@ -20,26 +19,18 @@ function App() {
               <Route index element={<PropertiesPage />} />
               <Route path="property/:id" element={<PropertyDetailPage />} />
               <Route 
-                path="list-property" 
+                path="dashboard" 
+                element={
+                  <ProtectedRoute requireWallet>
+                    <DashboardPage />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="publish" 
                 element={
                   <ProtectedRoute requireWallet requireCitizen requireProperty>
-                    <ListPropertyPage />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="my-properties" 
-                element={
-                  <ProtectedRoute requireWallet>
-                    <MyPropertiesPage />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="my-contracts" 
-                element={
-                  <ProtectedRoute requireWallet>
-                    <MyContractsPage />
+                    <PublishPropertyPage />
                   </ProtectedRoute>
                 } 
               />

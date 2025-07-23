@@ -8,10 +8,29 @@ interface Wallet {
   signMessage: (message: Uint8Array) => Promise<{ signature: Uint8Array }>;
 }
 
+interface PropertyCredential {
+  address: string;
+  merkleRoot: string;
+  credentialId: string;
+  expiry: number;
+}
+
 interface AttestationStatus {
   hasCitizen: boolean;
   hasProperty: boolean;
   propertyCount: number;
+  attestations?: {
+    twfido?: {
+      address: string;
+      merkleRoot: string;
+      credentialId: string;
+      expiry: number;
+    } | null;
+    twland?: {
+      count: number;
+      list: PropertyCredential[];
+    } | null;
+  };
 }
 
 interface WalletContextType {
@@ -84,6 +103,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         hasCitizen: data.hasCitizen,
         hasProperty: data.hasProperty,
         propertyCount: data.propertyCount,
+        attestations: data.attestations,
       };
 
       // 更新緩存
@@ -101,68 +121,69 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setAttestation(cached.data);
         return cached.data;
       }
-      return null;
+      
+      // 設置默認值
+      const defaultStatus: AttestationStatus = {
+        hasCitizen: false,
+        hasProperty: false,
+        propertyCount: 0,
+      };
+      setAttestation(defaultStatus);
+      return defaultStatus;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const connect = useCallback(async () => {
+  const connect = async (): Promise<boolean> => {
     const phantom = getPhantom();
     if (!phantom) {
       window.open("https://phantom.app/", "_blank");
       return false;
     }
 
+    setConnecting(true);
     try {
-      setConnecting(true);
       const response = await phantom.connect();
       
-      if (response.publicKey) {
-        const walletObj = {
-          publicKey: response.publicKey,
-          signTransaction: phantom.signTransaction.bind(phantom),
-          signAllTransactions: phantom.signAllTransactions.bind(phantom),
-          signMessage: phantom.signMessage.bind(phantom),
-        };
-        
-        setWallet(walletObj);
-        localStorage.setItem("walletAddress", response.publicKey.toString());
-        
-        // 連接成功後查詢憑證
-        await fetchAttestation(response.publicKey.toString());
-        
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.error("Failed to connect:", err);
+      const walletObj = {
+        publicKey: response.publicKey,
+        signTransaction: phantom.signTransaction.bind(phantom),
+        signAllTransactions: phantom.signAllTransactions.bind(phantom),
+        signMessage: phantom.signMessage.bind(phantom),
+      };
+      
+      setWallet(walletObj);
+      localStorage.setItem("walletAddress", response.publicKey.toString());
+      
+      // 連接後立即查詢憑證狀態
+      await fetchAttestation(response.publicKey.toString());
+      
+      return true;
+    } catch (error) {
+      console.error("Failed to connect:", error);
       return false;
     } finally {
       setConnecting(false);
     }
-  }, [fetchAttestation]);
+  };
 
-  const disconnect = useCallback(async () => {
+  const disconnect = () => {
     const phantom = getPhantom();
     if (phantom) {
-      try {
-        await phantom.disconnect();
-      } catch (err) {
-        console.error("Failed to disconnect:", err);
-      }
+      phantom.disconnect().catch(() => {});
     }
     
     setWallet(null);
     setAttestation(null);
     localStorage.removeItem("walletAddress");
-  }, []);
+  };
 
-  // 監聽錢包變化
   useEffect(() => {
     const phantom = getPhantom();
     if (!phantom) return;
 
+    // 監聽帳戶變更
     const handleAccountChanged = async (publicKey: PublicKey | null) => {
       if (publicKey) {
         const walletObj = {

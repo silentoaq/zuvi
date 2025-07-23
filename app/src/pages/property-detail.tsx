@@ -2,7 +2,7 @@ import { useParams } from "react-router-dom";
 
 export function PropertyDetailPage() {
   const { id } = useParams();
-
+  
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">房源詳情</h1>

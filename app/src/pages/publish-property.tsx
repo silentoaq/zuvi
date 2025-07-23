@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, Loader2, Building, QrCode, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, Building, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,10 +14,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { useAttestation } from "@/hooks/use-attestation";
 import { useWallet } from "@/hooks/use-wallet";
 import { ImageUpload } from "@/components/image-upload";
+import { SolanaService } from "@/services/solana";
 
 interface DisclosedData {
   address: string;
@@ -37,7 +37,6 @@ export function PublishPropertyPage() {
   const [loading, setLoading] = useState(false);
   const [disclosureStep, setDisclosureStep] = useState<"pending" | "verifying" | "completed" | null>(null);
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
-  const [vpRequestUri, setVpRequestUri] = useState<string | null>(null);
 
   useEffect(() => {
     if (!stateCredentialId && attestation?.attestations?.twland?.list.length === 1) {
@@ -98,7 +97,10 @@ export function PublishPropertyPage() {
 
       const data = await response.json();
       setQrCodeUrl(data.qrCodeUrl);
-      setVpRequestUri(data.vpRequestUri);
+      // 儲存完整的 VP Request URI
+      if (data.vpRequestUri) {
+        sessionStorage.setItem('vpRequestUri', data.vpRequestUri);
+      }
       
       // 開始輪詢狀態
       pollDisclosureStatus(data.requestId, token);
@@ -106,6 +108,7 @@ export function PublishPropertyPage() {
       console.error("Disclosure error:", error);
       toast.error("揭露請求失敗");
       setDisclosureStep(null);
+      sessionStorage.removeItem('vpRequestUri');
     } finally {
       setLoading(false);
     }
@@ -140,6 +143,8 @@ export function PublishPropertyPage() {
           }));
           setDisclosureStep("completed");
           toast.success("憑證揭露成功");
+          // 清理儲存的 URI
+          sessionStorage.removeItem('vpRequestUri');
           return;
         }
         
@@ -157,6 +162,7 @@ export function PublishPropertyPage() {
         console.error("Status check error:", error);
         toast.error("揭露請求逾時或失敗");
         setDisclosureStep(null);
+        sessionStorage.removeItem('vpRequestUri');
       }
     };
 
@@ -174,6 +180,11 @@ export function PublishPropertyPage() {
 
     if (uploadedImages.length === 0) {
       toast.error("請至少上傳一張房源照片");
+      return;
+    }
+
+    if (!wallet) {
+      toast.error("請連接錢包");
       return;
     }
 
@@ -211,15 +222,72 @@ export function PublishPropertyPage() {
       
       toast.success("房源詳情已上傳到 IPFS");
       
-      // TODO: 2. 準備交易發布到鏈上
+      // 2. 準備交易
       toast.info("準備發布到區塊鏈...");
       
-      // TODO: 3. 發送交易 - 使用 propertyDetailsHash
-      console.log("Property details hash:", propertyDetailsHash);
+      const propertyId = `${Date.now()}-${wallet.publicKey.toString().slice(0, 8)}`;
+      const ownerAttestation = attestation?.attestations?.twland?.list.find(
+        a => a.credentialId === selectedCredentialId
+      )?.address || "";
+      
+      const prepareResult = await SolanaService.prepareListingTransaction({
+        propertyId,
+        ownerAttestation,
+        monthlyRent: parseInt(formData.monthlyRent) * 1_000_000, // 轉換為 USDC 最小單位
+        depositMonths: parseInt(formData.depositMonths),
+        propertyDetailsHash
+      }, token);
+      
+      // 3. 顯示費用明細
+      const { breakdown } = prepareResult;
+      const confirmPayment = window.confirm(
+        `發布費用明細：\n` +
+        `發布費: ${breakdown.listingFee} USDC\n` +
+        `手續費: ${breakdown.txFeeInUsdc} USDC\n` +
+        `總計: ${breakdown.totalUsdc} USDC\n\n` +
+        `確認支付並發布房源？`
+      );
+      
+      if (!confirmPayment) {
+        setLoading(false);
+        return;
+      }
+      
+      // 4. 簽名交易
+      toast.info("請在錢包中簽名交易...");
+      
+      const transaction = SolanaService.deserializeTransaction(prepareResult.transaction);
+      const signedTransaction = await wallet.signTransaction(transaction);
+      const serializedTransaction = SolanaService.serializeSignedTransaction(signedTransaction);
+      
+      // 5. 執行交易
+      toast.info("發送交易到區塊鏈...");
+      
+      const executeResult = await SolanaService.executeTransaction(
+        serializedTransaction,
+        prepareResult.lastValidBlockHeight,
+        token
+      );
+      
+      if (executeResult.confirmed) {
+        toast.success("房源發布成功！");
+        toast.info(`交易簽名: ${executeResult.signature.slice(0, 20)}...`);
+        
+        // 6. 導航到房源詳情頁
+        setTimeout(() => {
+          navigate(`/property/${propertyId}`);
+        }, 2000);
+      } else {
+        throw new Error("Transaction failed to confirm");
+      }
       
     } catch (error) {
-      console.error('Publish error:', error);
-      toast.error("發布失敗");
+      console.error("Publish error:", error);
+      if (error instanceof Error) {
+        toast.error(error.message);
+      } else {
+        toast.error("發布房源失敗");
+      }
     } finally {
       setLoading(false);
     }
@@ -279,119 +347,154 @@ export function PublishPropertyPage() {
                   className="w-full"
                 >
                   {loading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      處理中...
+                    </>
                   ) : (
-                    <QrCode className="mr-2 h-4 w-4" />
+                    "開始揭露憑證資訊"
                   )}
-                  開始憑證揭露
                 </Button>
               )}
 
+              {/* 揭露狀態顯示 */}
               {disclosureStep === "verifying" && (
-                <div className="text-center py-8 space-y-4">
-                  {qrCodeUrl && (
-                    <img 
-                      src={qrCodeUrl} 
-                      alt="Disclosure QR Code"
-                      className="w-48 h-48 mx-auto"
-                    />
-                  )}
-                  <div className="space-y-2">
-                    <p className="font-medium">請使用 walletbz 掃描 QR Code</p>
-                    <p className="text-sm text-muted-foreground">或複製連結到 walletbz</p>
-                    {vpRequestUri && (
-                      <div className="flex items-center justify-center gap-2">
-                        <code className="text-xs bg-muted px-2 py-1 rounded max-w-xs truncate">
-                          {vpRequestUri}
-                        </code>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            navigator.clipboard.writeText(vpRequestUri);
-                            toast.success("已複製連結");
-                          }}
-                        >
-                          複製
-                        </Button>
+                <div className="space-y-4">
+                  <div className="text-center space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      請使用 walletbz 掃描 QR Code 完成憑證揭露
+                    </p>
+                    {qrCodeUrl && (
+                      <div className="flex flex-col items-center gap-4">
+                        <div className="p-4 bg-white rounded-xl shadow-sm">
+                          <img src={qrCodeUrl} alt="VP Request QR Code" className="w-32 h-32" />
+                        </div>
+                        
+                        {/* 可複製的網址 */}
+                        <div className="w-full max-w-md">
+                          <Label className="text-xs text-muted-foreground">或複製此連結：</Label>
+                          <div className="flex gap-2 mt-1">
+                            <Input
+                              value={sessionStorage.getItem('vpRequestUri') || ''}
+                              readOnly
+                              className="text-xs font-mono"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const uri = sessionStorage.getItem('vpRequestUri');
+                                if (uri) {
+                                  navigator.clipboard.writeText(uri);
+                                  toast.success("連結已複製");
+                                }
+                              }}
+                            >
+                              複製
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                     )}
-                  </div>
-                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    等待憑證揭露完成...
+                    <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      等待揭露完成...
+                    </div>
                   </div>
                 </div>
               )}
 
               {disclosureStep === "completed" && disclosedData && (
-                <div className="space-y-3">
-                  <p className="text-green-600 dark:text-green-400 font-medium">
-                    ✓ 憑證揭露完成
+                <div className="rounded-lg border bg-muted/50 p-4 space-y-2">
+                  <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                    ✓ 憑證揭露成功
                   </p>
-                  <div className="space-y-2 text-sm bg-muted/50 p-4 rounded-lg">
-                    <div>
-                      <span className="text-muted-foreground">地址：</span>
-                      <span className="ml-2 font-medium">{disclosedData.address}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">建築面積：</span>
-                      <span className="ml-2 font-medium">{disclosedData.building_area} 坪</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">使用類型：</span>
-                      <span className="ml-2 font-medium">{disclosedData.use}</span>
-                    </div>
+                  <div className="space-y-1 text-sm">
+                    <p>地址：{disclosedData.address}</p>
+                    <p>建築面積：{disclosedData.building_area}</p>
+                    <p>使用分區：{disclosedData.use}</p>
                   </div>
                 </div>
               )}
             </>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              <Building className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>沒有找到產權憑證</p>
-            </div>
+            <p className="text-center text-muted-foreground">
+              沒有找到產權憑證
+            </p>
           )}
         </CardContent>
       </Card>
 
-      {/* 步驟 2：房源資訊表單 */}
-      <Card className={cn(
-        !disclosedData && "opacity-50 pointer-events-none"
-      )}>
-        <CardHeader>
-          <CardTitle>步驟 2：房源資訊</CardTitle>
-          <CardDescription>
-            填寫租金、押金等詳細資訊
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* 步驟 2：填寫房源資訊 */}
+      <form onSubmit={handleSubmit}>
+        <Card>
+          <CardHeader>
+            <CardTitle>步驟 2：房源資訊</CardTitle>
+            <CardDescription>
+              填寫房源詳細資訊和租賃條件
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* 揭露的資訊（唯讀） */}
+            {disclosedData && (
+              <>
+                <div className="space-y-2">
+                  <Label>房源地址</Label>
+                  <Input
+                    value={formData.propertyAddress}
+                    disabled
+                    className="bg-muted"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>建築面積</Label>
+                    <Input
+                      value={formData.buildingArea}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>使用分區</Label>
+                    <Input
+                      value={formData.propertyUse}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* 可編輯的資訊 */}
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="monthlyRent">月租金 (USDC)</Label>
+                <Label htmlFor="monthlyRent">
+                  月租金 (USDC)
+                  <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   id="monthlyRent"
                   type="number"
-                  min="1"
-                  placeholder="例：1000"
+                  placeholder="10000"
                   value={formData.monthlyRent}
-                  onChange={(e) => setFormData(prev => ({
-                    ...prev,
-                    monthlyRent: e.target.value
-                  }))}
+                  onChange={(e) => setFormData(prev => ({ ...prev, monthlyRent: e.target.value }))}
                   required
+                  disabled={!disclosedData || loading}
                 />
               </div>
-              
               <div className="space-y-2">
-                <Label htmlFor="depositMonths">押金（月數）</Label>
+                <Label htmlFor="depositMonths">
+                  押金月數
+                  <span className="text-destructive">*</span>
+                </Label>
                 <Select
                   value={formData.depositMonths}
-                  onValueChange={(value) => setFormData(prev => ({
-                    ...prev,
-                    depositMonths: value
-                  }))}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, depositMonths: value }))}
+                  disabled={!disclosedData || loading}
                 >
                   <SelectTrigger id="depositMonths">
                     <SelectValue />
@@ -406,43 +509,66 @@ export function PublishPropertyPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">房源描述</Label>
+              <Label htmlFor="description">
+                房源描述
+                <span className="text-destructive">*</span>
+              </Label>
               <Textarea
                 id="description"
-                placeholder="描述房源特色、周邊環境、交通等資訊..."
+                placeholder="請描述房源特色、周邊環境、交通便利性等..."
                 value={formData.description}
-                onChange={(e) => setFormData(prev => ({
-                  ...prev,
-                  description: e.target.value
-                }))}
-                rows={4}
+                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                rows={5}
                 required
+                disabled={!disclosedData || loading}
               />
             </div>
+          </CardContent>
+        </Card>
 
-            <div className="space-y-2">
-              <Label>房源照片</Label>
-              <ImageUpload
-                maxFiles={10}
-                onImagesChange={setUploadedImages}
-                disabled={loading}
-                getAuthToken={createAuthToken}
-              />
-            </div>
+        {/* 步驟 3：上傳照片 */}
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>步驟 3：上傳照片</CardTitle>
+            <CardDescription>
+              至少上傳一張房源照片，最多可上傳 10 張
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ImageUpload
+              maxFiles={10}
+              onImagesChange={setUploadedImages}
+              disabled={!disclosedData || loading}
+              getAuthToken={createAuthToken}
+            />
+          </CardContent>
+        </Card>
 
-            <Button 
-              type="submit" 
-              className="w-full" 
-              disabled={loading || !disclosedData || uploadedImages.length === 0}
-            >
-              {loading ? (
+        {/* 提交按鈕 */}
+        <div className="mt-6 flex justify-end gap-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => navigate(-1)}
+            disabled={loading}
+          >
+            取消
+          </Button>
+          <Button
+            type="submit"
+            disabled={!disclosedData || uploadedImages.length === 0 || loading}
+          >
+            {loading ? (
+              <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              {loading ? "處理中..." : "發布房源"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+                處理中...
+              </>
+            ) : (
+              "發布房源"
+            )}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }

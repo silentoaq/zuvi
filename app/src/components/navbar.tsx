@@ -192,7 +192,7 @@ export function Navbar() {
           {/* Right side */}
           <div className="ml-auto flex items-center gap-2">
             {/* 發布房源按鈕 - 只在房源市場頁顯示 */}
-            {location.pathname === "/" && attestation?.hasProperty && (
+            {location.pathname === "/" && wallet && (
               <Button 
                 onClick={() => navigate("/publish")}
                 size="sm"
@@ -241,7 +241,7 @@ export function Navbar() {
                     {item.label}
                   </Link>
                 ))}
-                {location.pathname === "/" && attestation?.hasProperty && (
+                {location.pathname === "/" && wallet && (
                   <Button 
                     onClick={() => {
                       navigate("/publish");

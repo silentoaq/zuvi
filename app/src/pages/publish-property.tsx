@@ -1,23 +1,40 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Building } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useAttestation } from "@/hooks/use-attestation";
 
 export function PublishPropertyPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { attestation } = useAttestation();
   
-  // 從導航 state 獲取憑證資訊
-  const { credentialId } = location.state || {};
+  // 從導航 state 獲取憑證資訊（如果有）
+  const stateCredentialId = location.state?.credentialId;
   
+  const [selectedCredentialId, setSelectedCredentialId] = useState<string>(stateCredentialId || "");
   const [loading, setLoading] = useState(false);
   const [disclosureStep, setDisclosureStep] = useState<"pending" | "verifying" | "completed" | null>(null);
+
+  // 如果沒有預選憑證，且只有一個憑證，自動選擇
+  useEffect(() => {
+    if (!stateCredentialId && attestation?.attestations?.twland?.list.length === 1) {
+      setSelectedCredentialId(attestation.attestations.twland.list[0].credentialId);
+    }
+  }, [stateCredentialId, attestation]);
   
   // 表單狀態
   const [formData, setFormData] = useState({
@@ -39,8 +56,8 @@ export function PublishPropertyPage() {
 
   // 開始憑證揭露流程
   const startDisclosure = async () => {
-    if (!credentialId) {
-      toast.error("未找到憑證資訊");
+    if (!selectedCredentialId) {
+      toast.error("請先選擇房產憑證");
       return;
     }
 
@@ -56,7 +73,7 @@ export function PublishPropertyPage() {
           // TODO: 添加認證 header
         },
         body: JSON.stringify({
-          credentialId,
+          credentialId: selectedCredentialId,
           requiredFields: ["address", "building_area", "use"],
           purpose: "發布房源於 zuvi 平台",
         }),
@@ -118,6 +135,26 @@ export function PublishPropertyPage() {
     }
   };
 
+  // 如果沒有房產憑證，顯示提示
+  if (!attestation?.hasProperty || !attestation?.attestations?.twland) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <Card>
+          <CardContent className="text-center py-12">
+            <Building className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <p className="text-lg font-medium mb-2">需要房產憑證</p>
+            <p className="text-muted-foreground mb-4">
+              您需要先至 walletbz 申請房產憑證才能發布房源
+            </p>
+            <Button variant="outline" onClick={() => navigate(-1)}>
+              返回
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
@@ -146,15 +183,49 @@ export function PublishPropertyPage() {
           <CardContent>
             {disclosureStep === null && (
               <div className="space-y-4">
-                <div className="text-sm space-y-2">
-                  <p>選擇的憑證：</p>
-                  <code className="block p-2 bg-muted rounded text-xs">
-                    {credentialId || "未選擇憑證"}
-                  </code>
-                </div>
+                {/* 憑證選擇器 - 只在沒有預選時顯示 */}
+                {!stateCredentialId && attestation?.attestations?.twland && (
+                  <div className="space-y-2">
+                    <Label htmlFor="credential-select">選擇房產憑證</Label>
+                    <Select 
+                      value={selectedCredentialId} 
+                      onValueChange={setSelectedCredentialId}
+                    >
+                      <SelectTrigger id="credential-select">
+                        <SelectValue placeholder="請選擇要使用的房產憑證" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {attestation.attestations.twland.list.map((credential, index) => (
+                          <SelectItem 
+                            key={index} 
+                            value={credential.credentialId}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Building className="h-4 w-4" />
+                              <span className="font-mono text-sm">
+                                {credential.credentialId.slice(0, 16)}...
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                
+                {/* 顯示選中的憑證 */}
+                {selectedCredentialId && (
+                  <div className="text-sm space-y-2">
+                    <p>選擇的憑證：</p>
+                    <code className="block p-2 bg-muted rounded text-xs">
+                      {selectedCredentialId}
+                    </code>
+                  </div>
+                )}
+                
                 <Button 
                   onClick={startDisclosure}
-                  disabled={!credentialId || loading}
+                  disabled={!selectedCredentialId || loading}
                   className="w-full"
                 >
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

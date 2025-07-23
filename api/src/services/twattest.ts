@@ -1,27 +1,17 @@
-import { createTwattestSDK } from '@twattest/sdk';
+import { createTwattestSDK, TwattestSDK } from '@twattest/sdk';
 import { createLogger } from '../utils/logger.ts';
 
 const logger = createLogger();
+let sdkInstance: TwattestSDK | null = null;
 
-let twattestInstance: ReturnType<typeof createTwattestSDK> | null = null;
-
-export function getTwattestSDK() {
-  if (!twattestInstance) {
-    const baseUrl = process.env.TWATTEST_API_URL;
-    const apiKey = process.env.TWATTEST_API_KEY;
-    
-    if (!baseUrl || !apiKey) {
-      logger.error('Missing Twattest configuration', { baseUrl, hasApiKey: !!apiKey });
-      throw new Error('Twattest SDK not configured. Check TWATTEST_API_URL and TWATTEST_API_KEY');
-    }
-    
-    twattestInstance = createTwattestSDK({
-      baseUrl,
-      apiKey
+export function getTwattestSDK(): TwattestSDK {
+  if (!sdkInstance) {
+    logger.info('Initializing twattest SDK...');
+    sdkInstance = createTwattestSDK({
+      baseUrl: process.env.TWATTEST_API_URL!,
+      apiKey: process.env.TWATTEST_API_KEY!
     });
-    
-    logger.info('Twattest SDK initialized', { baseUrl });
+    logger.info('twattest SDK initialized successfully');
   }
-  
-  return twattestInstance;
+  return sdkInstance;
 }

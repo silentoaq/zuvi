@@ -30,7 +30,7 @@ import { useState } from "react";
 export function Navbar() {
   const location = useLocation();
   const { wallet, connect, disconnect, shortAddress } = useWallet();
-  const { attestation, loading } = useAttestation(wallet?.publicKey?.toString());
+  const { attestation, loading } = useAttestation();
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const navItems = [
@@ -65,7 +65,7 @@ export function Navbar() {
       <div className={cn("group relative flex items-center gap-1 px-2.5 py-1.5 bg-muted rounded-lg cursor-help", className)}>
         <User className={cn(
           "h-4 w-4",
-          attestation?.hasCitizen ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+          attestation?.hasCitizen ? "text-blue-600 dark:textblue-400" : "text-muted-foreground"
         )} />
         <Building className={cn(
           "h-4 w-4",
@@ -242,7 +242,6 @@ export function Navbar() {
                     {/* Mobile attestation status */}
                     {wallet && (
                       <div className="mt-4">
-                        <AttestationStatus className="inline-flex" />
                         {/* 手機版憑證說明 */}
                         <div className="mt-2 text-xs text-muted-foreground space-y-1">
                           <div className="flex items-center gap-2">

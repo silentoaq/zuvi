@@ -1,6 +1,5 @@
 import { Navigate } from "react-router-dom";
 import { useWallet } from "@/hooks/use-wallet";
-import { useAttestation } from "@/hooks/use-attestation";
 import { Loader2 } from "lucide-react";
 
 interface ProtectedRouteProps {
@@ -16,16 +15,15 @@ export function ProtectedRoute({
   requireCitizen = false,
   requireProperty = false,
 }: ProtectedRouteProps) {
-  const { wallet } = useWallet();
-  const { attestation, loading } = useAttestation(wallet?.publicKey?.toString());
+  const { wallet, attestation, loading } = useWallet();
 
   // 檢查錢包連接
   if (requireWallet && !wallet) {
     return <Navigate to="/" replace />;
   }
 
-  // 只在首次載入且需要憑證時顯示 loading
-  if (loading && (requireCitizen || requireProperty) && attestation === null) {
+  // 只在錢包已連接且正在載入憑證時顯示 loading
+  if (wallet && loading && (requireCitizen || requireProperty)) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

@@ -8,7 +8,7 @@
     "css": "src/index.css",
     "baseColor": "gray",
     "cssVariables": true,
-    "prefix": "tw-"
+    "prefix": ""
   },
   "aliases": {
     "components": "@/components",

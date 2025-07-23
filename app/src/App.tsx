@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Layout } from "@/components/layout";
+import { ProtectedRoute } from "@/components/protected-route";
 import { PropertiesPage } from "@/pages/properties";
 import { ListPropertyPage } from "@/pages/list-property";
 import { MyPropertiesPage } from "@/pages/my-properties";
@@ -16,9 +17,30 @@ function App() {
           <Route path="/" element={<Layout />}>
             <Route index element={<PropertiesPage />} />
             <Route path="property/:id" element={<PropertyDetailPage />} />
-            <Route path="list-property" element={<ListPropertyPage />} />
-            <Route path="my-properties" element={<MyPropertiesPage />} />
-            <Route path="my-contracts" element={<MyContractsPage />} />
+            <Route 
+              path="list-property" 
+              element={
+                <ProtectedRoute requireWallet requireCitizen requireProperty>
+                  <ListPropertyPage />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="my-properties" 
+              element={
+                <ProtectedRoute requireWallet>
+                  <MyPropertiesPage />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="my-contracts" 
+              element={
+                <ProtectedRoute requireWallet>
+                  <MyContractsPage />
+                </ProtectedRoute>
+              } 
+            />
           </Route>
         </Routes>
       </BrowserRouter>

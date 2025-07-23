@@ -6,6 +6,8 @@ import attestationRoutes from './routes/attestation.ts';
 import propertiesRoutes from './routes/properties.ts';
 import priceRoutes from './routes/price.ts';
 import disclosureRoutes from './routes/disclosure.ts';
+import ipfsRoutes from './routes/ipfs.ts';
+import listingRoutes from './routes/listing.ts';
 
 dotenv.config();
 
@@ -36,6 +38,8 @@ app.use('/api/attestation', attestationRoutes);
 app.use('/api/properties', propertiesRoutes);
 app.use('/api/price', priceRoutes);
 app.use('/api/disclosure', disclosureRoutes);
+app.use('/api/ipfs', ipfsRoutes);
+app.use('/api/listing', listingRoutes);
 
 // 錯誤處理
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

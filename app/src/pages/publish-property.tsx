@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAttestation } from "@/hooks/use-attestation";
 import { useWallet } from "@/hooks/use-wallet";
+import { ImageUpload } from "@/components/image-upload";
 
 interface DisclosedData {
   address: string;
@@ -54,8 +55,7 @@ export function PublishPropertyPage() {
   });
 
   const [disclosedData, setDisclosedData] = useState<DisclosedData | null>(null);
-  // TODO: 第二批實作圖片上傳
-  // const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
 
   // 創建簽名訊息
   const createAuthToken = async () => {
@@ -172,14 +172,57 @@ export function PublishPropertyPage() {
       return;
     }
 
-    // TODO: 第二批實作圖片上傳檢查
-    // if (uploadedImages.length === 0) {
-    //   toast.error("請至少上傳一張房源照片");
-    //   return;
-    // }
+    if (uploadedImages.length === 0) {
+      toast.error("請至少上傳一張房源照片");
+      return;
+    }
 
-    // TODO: 實作發布房源到鏈上
-    toast.info("發布功能即將完成");
+    try {
+      setLoading(true);
+      
+      // 1. 上傳房源詳情到 IPFS
+      const token = await createAuthToken();
+      
+      const propertyDetailsResponse = await fetch('/api/ipfs/upload-property-details', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          description: formData.description,
+          images: uploadedImages,
+          features: [],
+          amenities: [],
+          rules: [],
+          location: {
+            address: formData.propertyAddress,
+            area: formData.buildingArea,
+            use: formData.propertyUse
+          }
+        })
+      });
+
+      if (!propertyDetailsResponse.ok) {
+        throw new Error('Failed to upload property details');
+      }
+
+      const { ipfsHash: propertyDetailsHash } = await propertyDetailsResponse.json();
+      
+      toast.success("房源詳情已上傳到 IPFS");
+      
+      // TODO: 2. 準備交易發布到鏈上
+      toast.info("準備發布到區塊鏈...");
+      
+      // TODO: 3. 發送交易 - 使用 propertyDetailsHash
+      console.log("Property details hash:", propertyDetailsHash);
+      
+    } catch (error) {
+      console.error('Publish error:', error);
+      toast.error("發布失敗");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -379,22 +422,23 @@ export function PublishPropertyPage() {
 
             <div className="space-y-2">
               <Label>房源照片</Label>
-              <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center">
-                <p className="text-muted-foreground">
-                  拖放照片到此處，或點擊上傳
-                </p>
-                <p className="text-sm text-muted-foreground mt-2">
-                  支援 JPG、PNG 格式，最多 10 張
-                </p>
-                {/* TODO: 實作圖片上傳功能 */}
-              </div>
+              <ImageUpload
+                maxFiles={10}
+                onImagesChange={setUploadedImages}
+                disabled={loading}
+                getAuthToken={createAuthToken}
+              />
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button 
+              type="submit" 
+              className="w-full" 
+              disabled={loading || !disclosedData || uploadedImages.length === 0}
+            >
               {loading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
-              發布房源
+              {loading ? "處理中..." : "發布房源"}
             </Button>
           </form>
         </CardContent>

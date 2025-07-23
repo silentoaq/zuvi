@@ -1,13 +1,9 @@
 import { Response, NextFunction } from 'express';
-import { createTwattestSDK } from '@twattest/sdk';
+import { getTwattestSDK } from '../services/twattest.ts';
 import { AuthRequest } from './auth.ts';
 import { createLogger } from '../utils/logger.ts';
 
 const logger = createLogger();
-const twattest = createTwattestSDK({
-  baseUrl: process.env.TWATTEST_API_URL!,
-  apiKey: process.env.TWATTEST_API_KEY!
-});
 
 // 憑證狀態快取（10分鐘）
 const attestationCache = new Map<string, {
@@ -34,6 +30,7 @@ export async function requireCitizen(
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
       status = cached.data;
     } else {
+      const twattest = getTwattestSDK();
       status = await twattest.getAttestationStatus(req.wallet.did);
       attestationCache.set(req.wallet.did, {
         data: status,
@@ -72,6 +69,7 @@ export async function requireProperty(
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
       status = cached.data;
     } else {
+      const twattest = getTwattestSDK();
       status = await twattest.getAttestationStatus(req.wallet.did);
       attestationCache.set(req.wallet.did, {
         data: status,

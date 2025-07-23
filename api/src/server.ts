@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { createLogger } from './utils/logger.ts';
+import { getTwattestSDK } from './services/twattest.ts';
 import attestationRoutes from './routes/attestation.ts';
 import propertiesRoutes from './routes/properties.ts';
 import priceRoutes from './routes/price.ts';
@@ -20,6 +21,17 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+// 預熱 SDK 初始化
+async function warmupServices() {
+  try {
+    logger.info('Warming up services...');
+    getTwattestSDK();
+    logger.info('Services warmed up successfully');
+  } catch (error) {
+    logger.error('Failed to warm up services:', error);
+  }
+}
 
 // 健康檢查
 app.get('/api/health', (req, res) => {
@@ -44,7 +56,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   logger.info(`Server running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV}`);
+  
+  // 伺服器啟動後預熱服務
+  await warmupServices();
 });

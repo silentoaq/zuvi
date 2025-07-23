@@ -1,14 +1,9 @@
 import express from 'express';
-import { createTwattestSDK } from '@twattest/sdk';
+import { getTwattestSDK } from '../services/twattest.ts';
 import { createLogger } from '../utils/logger.ts';
 
 const router = express.Router();
 const logger = createLogger();
-
-const twattest = createTwattestSDK({
-  baseUrl: process.env.TWATTEST_API_URL!,
-  apiKey: process.env.TWATTEST_API_KEY!
-});
 
 // 查詢憑證狀態
 router.get('/status/:did', async (req, res) => {
@@ -21,6 +16,7 @@ router.get('/status/:did', async (req, res) => {
       });
     }
 
+    const twattest = getTwattestSDK();
     const status = await twattest.getAttestationStatus(did);
     
     // 回傳簡化的狀態資訊

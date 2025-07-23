@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, Loader2, Building } from "lucide-react";
+import { ArrowLeft, Loader2, Building, QrCode, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,147 +16,174 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAttestation } from "@/hooks/use-attestation";
+import { useWallet } from "@/hooks/use-wallet";
+
+interface DisclosedData {
+  address: string;
+  building_area: string;
+  use: string;
+}
 
 export function PublishPropertyPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { attestation } = useAttestation();
+  const { wallet } = useWallet();
   
-  // 從導航 state 獲取憑證資訊（如果有）
   const stateCredentialId = location.state?.credentialId;
   
   const [selectedCredentialId, setSelectedCredentialId] = useState<string>(stateCredentialId || "");
   const [loading, setLoading] = useState(false);
   const [disclosureStep, setDisclosureStep] = useState<"pending" | "verifying" | "completed" | null>(null);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [vpRequestUri, setVpRequestUri] = useState<string | null>(null);
 
-  // 如果沒有預選憑證，且只有一個憑證，自動選擇
   useEffect(() => {
     if (!stateCredentialId && attestation?.attestations?.twland?.list.length === 1) {
       setSelectedCredentialId(attestation.attestations.twland.list[0].credentialId);
     }
   }, [stateCredentialId, attestation]);
   
-  // 表單狀態
   const [formData, setFormData] = useState({
     monthlyRent: "",
     depositMonths: "2",
     description: "",
-    // 這些欄位需要從憑證揭露獲取
     propertyAddress: "",
     buildingArea: "",
     propertyUse: "",
   });
 
-  // 揭露的資料
-  const [disclosedData, setDisclosedData] = useState<{
-    address?: string;
-    building_area?: string;
-    use?: string;
-  } | null>(null);
+  const [disclosedData, setDisclosedData] = useState<DisclosedData | null>(null);
+  // TODO: 第二批實作圖片上傳
+  // const [uploadedImages, setUploadedImages] = useState<string[]>([]);
 
-  // 開始憑證揭露流程
-  const startDisclosure = async () => {
+  // 創建簽名訊息
+  const createAuthToken = async () => {
+    if (!wallet) throw new Error("Wallet not connected");
+    
+    const message = `Authenticate for zuvi: ${Date.now()}`;
+    const encodedMessage = new TextEncoder().encode(message);
+    const { signature } = await wallet.signMessage(encodedMessage);
+    
+    const signatureBase64 = btoa(String.fromCharCode(...signature));
+    return `${wallet.publicKey.toString()}.${signatureBase64}.${btoa(message)}`;
+  };
+
+  // 開始揭露流程
+  const handleStartDisclosure = async () => {
     if (!selectedCredentialId) {
-      toast.error("請先選擇房產憑證");
+      toast.error("請選擇一個產權憑證");
       return;
     }
 
-    setLoading(true);
-    setDisclosureStep("pending");
-
     try {
-      // TODO: 呼叫後端 API 建立揭露請求
-      const response = await fetch("/api/disclosure/request", {
+      setLoading(true);
+      setDisclosureStep("verifying");
+      
+      const token = await createAuthToken();
+      
+      // 創建揭露請求
+      const response = await fetch("/api/disclosure/create", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // TODO: 添加認證 header
+          "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify({
-          credentialId: selectedCredentialId,
-          requiredFields: ["address", "building_area", "use"],
-          purpose: "發布房源於 zuvi 平台",
-        }),
+        body: JSON.stringify({ credentialId: selectedCredentialId })
       });
 
       if (!response.ok) {
-        throw new Error("建立揭露請求失敗");
+        throw new Error("Failed to create disclosure request");
       }
 
-      const { requestId, vpRequestUri } = await response.json();
-
-      // TODO: 顯示 QR Code 或深層連結讓用戶在 walletbz 完成揭露
-      setDisclosureStep("verifying");
-
-      // TODO: 輪詢檢查揭露狀態
-      // 這裡需要實作輪詢邏輯
+      const data = await response.json();
+      setQrCodeUrl(data.qrCodeUrl);
+      setVpRequestUri(data.vpRequestUri);
       
-      // 模擬揭露完成（實際應該從 API 獲取）
-      setTimeout(() => {
-        setDisclosedData({
-          address: "台北市信義區信義路五段7號",
-          building_area: "35.5",
-          use: "住宅"
-        });
-        setDisclosureStep("completed");
-      }, 3000);
-
+      // 開始輪詢狀態
+      pollDisclosureStatus(data.requestId, token);
     } catch (error) {
       console.error("Disclosure error:", error);
-      toast.error("無法完成憑證揭露，請稍後再試");
+      toast.error("揭露請求失敗");
       setDisclosureStep(null);
     } finally {
       setLoading(false);
     }
   };
 
-  // 提交發布房源
+  // 輪詢揭露狀態
+  const pollDisclosureStatus = async (reqId: string, token: string) => {
+    let attempts = 0;
+    const maxAttempts = 150; // 5 分鐘
+
+    const checkStatus = async () => {
+      try {
+        const response = await fetch(`/api/disclosure/status/${reqId}`, {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to get status");
+        }
+
+        const status = await response.json();
+        
+        if (status.status === "completed" && status.disclosedData) {
+          setDisclosedData(status.disclosedData);
+          setFormData(prev => ({
+            ...prev,
+            propertyAddress: status.disclosedData.address,
+            buildingArea: status.disclosedData.building_area,
+            propertyUse: status.disclosedData.use
+          }));
+          setDisclosureStep("completed");
+          toast.success("憑證揭露成功");
+          return;
+        }
+        
+        if (status.status === "expired") {
+          throw new Error("Disclosure request expired");
+        }
+
+        attempts++;
+        if (attempts < maxAttempts) {
+          setTimeout(checkStatus, 2000);
+        } else {
+          throw new Error("Disclosure timeout");
+        }
+      } catch (error) {
+        console.error("Status check error:", error);
+        toast.error("揭露請求逾時或失敗");
+        setDisclosureStep(null);
+      }
+    };
+
+    checkStatus();
+  };
+
+  // 處理表單提交
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
+    
     if (!disclosedData) {
       toast.error("請先完成憑證揭露");
       return;
     }
 
-    setLoading(true);
+    // TODO: 第二批實作圖片上傳檢查
+    // if (uploadedImages.length === 0) {
+    //   toast.error("請至少上傳一張房源照片");
+    //   return;
+    // }
 
-    try {
-      // TODO: 呼叫後端 API 發布房源
-      // 這會觸發 Solana 交易
-
-      toast.success("房源已成功發布");
-      navigate("/dashboard");
-    } catch (error) {
-      console.error("Publish error:", error);
-      toast.error("無法發布房源，請稍後再試");
-    } finally {
-      setLoading(false);
-    }
+    // TODO: 實作發布房源到鏈上
+    toast.info("發布功能即將完成");
   };
 
-  // 如果沒有房產憑證，顯示提示
-  if (!attestation?.hasProperty || !attestation?.attestations?.twland) {
-    return (
-      <div className="max-w-2xl mx-auto">
-        <Card>
-          <CardContent className="text-center py-12">
-            <Building className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-lg font-medium mb-2">需要房產憑證</p>
-            <p className="text-muted-foreground mb-4">
-              您需要先至 walletbz 申請房產憑證才能發布房源
-            </p>
-            <Button variant="outline" onClick={() => navigate(-1)}>
-              返回
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
         <Button
           variant="ghost"
@@ -165,118 +192,127 @@ export function PublishPropertyPage() {
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div>
-          <h1 className="text-2xl font-bold">發布房源</h1>
-          <p className="text-muted-foreground">填寫房源資訊並完成憑證驗證</p>
-        </div>
+        <h1 className="text-3xl font-bold">發布房源</h1>
       </div>
 
-      {/* 憑證揭露卡片 */}
-      {!disclosedData && (
-        <Card>
-          <CardHeader>
-            <CardTitle>步驟 1：憑證揭露</CardTitle>
-            <CardDescription>
-              需要揭露房產憑證中的地址、建築面積和使用類型
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {disclosureStep === null && (
-              <div className="space-y-4">
-                {/* 憑證選擇器 - 只在沒有預選時顯示 */}
-                {!stateCredentialId && attestation?.attestations?.twland && (
-                  <div className="space-y-2">
-                    <Label htmlFor="credential-select">選擇房產憑證</Label>
-                    <Select 
-                      value={selectedCredentialId} 
-                      onValueChange={setSelectedCredentialId}
-                    >
-                      <SelectTrigger id="credential-select">
-                        <SelectValue placeholder="請選擇要使用的房產憑證" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {attestation.attestations.twland.list.map((credential, index) => (
-                          <SelectItem 
-                            key={index} 
-                            value={credential.credentialId}
-                          >
-                            <div className="flex items-center gap-2">
-                              <Building className="h-4 w-4" />
-                              <span className="font-mono text-sm">
-                                {credential.credentialId.slice(0, 16)}...
-                              </span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                
-                {/* 顯示選中的憑證 */}
-                {selectedCredentialId && (
-                  <div className="text-sm space-y-2">
-                    <p>選擇的憑證：</p>
-                    <code className="block p-2 bg-muted rounded text-xs">
-                      {selectedCredentialId}
-                    </code>
-                  </div>
-                )}
-                
+      {/* 步驟 1：選擇憑證並揭露 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>步驟 1：選擇產權憑證</CardTitle>
+          <CardDescription>
+            選擇要發布的房產憑證，並揭露必要資訊
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {attestation?.attestations?.twland?.list && attestation.attestations.twland.list.length > 0 ? (
+            <>
+              <div className="space-y-2">
+                <Label>選擇憑證</Label>
+                <Select
+                  value={selectedCredentialId}
+                  onValueChange={setSelectedCredentialId}
+                  disabled={disclosureStep !== null}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="選擇一個產權憑證" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {attestation.attestations.twland.list.map((cred) => (
+                      <SelectItem key={cred.credentialId} value={cred.credentialId}>
+                        <div className="flex items-center gap-2">
+                          <Building className="h-4 w-4" />
+                          <span className="font-mono text-sm">{cred.credentialId}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {!disclosureStep && (
                 <Button 
-                  onClick={startDisclosure}
+                  onClick={handleStartDisclosure}
                   disabled={!selectedCredentialId || loading}
                   className="w-full"
                 >
-                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {loading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <QrCode className="mr-2 h-4 w-4" />
+                  )}
                   開始憑證揭露
                 </Button>
-              </div>
-            )}
+              )}
 
-            {disclosureStep === "pending" && (
-              <div className="text-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-                <p>正在建立揭露請求...</p>
-              </div>
-            )}
-
-            {disclosureStep === "verifying" && (
-              <div className="text-center py-8">
-                <div className="w-48 h-48 bg-muted mx-auto mb-4 rounded-lg flex items-center justify-center">
-                  <p className="text-muted-foreground">QR Code</p>
-                </div>
-                <p className="mb-2">請使用 walletbz 掃描 QR Code</p>
-                <p className="text-sm text-muted-foreground">等待憑證揭露完成...</p>
-              </div>
-            )}
-
-            {disclosureStep === "completed" && disclosedData && (
-              <div className="space-y-3">
-                <p className="text-green-600 dark:text-green-400 font-medium">
-                  ✓ 憑證揭露完成
-                </p>
-                <div className="space-y-2 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">地址：</span>
-                    <span className="ml-2">{disclosedData.address}</span>
+              {disclosureStep === "verifying" && (
+                <div className="text-center py-8 space-y-4">
+                  {qrCodeUrl && (
+                    <img 
+                      src={qrCodeUrl} 
+                      alt="Disclosure QR Code"
+                      className="w-48 h-48 mx-auto"
+                    />
+                  )}
+                  <div className="space-y-2">
+                    <p className="font-medium">請使用 walletbz 掃描 QR Code</p>
+                    <p className="text-sm text-muted-foreground">或複製連結到 walletbz</p>
+                    {vpRequestUri && (
+                      <div className="flex items-center justify-center gap-2">
+                        <code className="text-xs bg-muted px-2 py-1 rounded max-w-xs truncate">
+                          {vpRequestUri}
+                        </code>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            navigator.clipboard.writeText(vpRequestUri);
+                            toast.success("已複製連結");
+                          }}
+                        >
+                          複製
+                        </Button>
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <span className="text-muted-foreground">建築面積：</span>
-                    <span className="ml-2">{disclosedData.building_area} 坪</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">使用類型：</span>
-                    <span className="ml-2">{disclosedData.use}</span>
+                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    等待憑證揭露完成...
                   </div>
                 </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+              )}
 
-      {/* 房源資訊表單 */}
+              {disclosureStep === "completed" && disclosedData && (
+                <div className="space-y-3">
+                  <p className="text-green-600 dark:text-green-400 font-medium">
+                    ✓ 憑證揭露完成
+                  </p>
+                  <div className="space-y-2 text-sm bg-muted/50 p-4 rounded-lg">
+                    <div>
+                      <span className="text-muted-foreground">地址：</span>
+                      <span className="ml-2 font-medium">{disclosedData.address}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">建築面積：</span>
+                      <span className="ml-2 font-medium">{disclosedData.building_area} 坪</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">使用類型：</span>
+                      <span className="ml-2 font-medium">{disclosedData.use}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Building className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>沒有找到產權憑證</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 步驟 2：房源資訊表單 */}
       <Card className={cn(
         !disclosedData && "opacity-50 pointer-events-none"
       )}>
@@ -288,13 +324,14 @@ export function PublishPropertyPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="monthlyRent">月租金 (USDC)</Label>
                 <Input
                   id="monthlyRent"
                   type="number"
-                  placeholder="例：500"
+                  min="1"
+                  placeholder="例：1000"
                   value={formData.monthlyRent}
                   onChange={(e) => setFormData(prev => ({
                     ...prev,
@@ -303,20 +340,25 @@ export function PublishPropertyPage() {
                   required
                 />
               </div>
+              
               <div className="space-y-2">
                 <Label htmlFor="depositMonths">押金（月數）</Label>
-                <Input
-                  id="depositMonths"
-                  type="number"
-                  min="1"
-                  max="3"
+                <Select
                   value={formData.depositMonths}
-                  onChange={(e) => setFormData(prev => ({
+                  onValueChange={(value) => setFormData(prev => ({
                     ...prev,
-                    depositMonths: e.target.value
+                    depositMonths: value
                   }))}
-                  required
-                />
+                >
+                  <SelectTrigger id="depositMonths">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 個月</SelectItem>
+                    <SelectItem value="2">2 個月</SelectItem>
+                    <SelectItem value="3">3 個月</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -324,23 +366,34 @@ export function PublishPropertyPage() {
               <Label htmlFor="description">房源描述</Label>
               <Textarea
                 id="description"
-                placeholder="描述房源特色、設備、交通等資訊..."
-                rows={4}
+                placeholder="描述房源特色、周邊環境、交通等資訊..."
                 value={formData.description}
                 onChange={(e) => setFormData(prev => ({
                   ...prev,
                   description: e.target.value
                 }))}
+                rows={4}
                 required
               />
             </div>
 
-            <Button 
-              type="submit" 
-              className="w-full"
-              disabled={loading || !disclosedData}
-            >
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <div className="space-y-2">
+              <Label>房源照片</Label>
+              <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center">
+                <p className="text-muted-foreground">
+                  拖放照片到此處，或點擊上傳
+                </p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  支援 JPG、PNG 格式，最多 10 張
+                </p>
+                {/* TODO: 實作圖片上傳功能 */}
+              </div>
+            </div>
+
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
               發布房源
             </Button>
           </form>

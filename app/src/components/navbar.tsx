@@ -174,16 +174,17 @@ export function Navbar() {
             <NavigationMenuList>
               {navItems.map((item) => (
                 <NavigationMenuItem key={item.path}>
-                  <Link to={item.path}>
-                    <NavigationMenuLink
+                  <NavigationMenuLink asChild>
+                    <Link 
+                      to={item.path}
                       className={cn(
                         navigationMenuTriggerStyle(),
                         location.pathname === item.path && "bg-accent"
                       )}
                     >
                       {item.label}
-                    </NavigationMenuLink>
-                  </Link>
+                    </Link>
+                  </NavigationMenuLink>
                 </NavigationMenuItem>
               ))}
             </NavigationMenuList>

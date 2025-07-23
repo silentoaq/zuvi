@@ -23,21 +23,49 @@ export async function verifyWallet(
     }
 
     const token = authHeader.slice(7);
-    const [address, signature, message] = token.split('.');
+    const [address, signatureBase64, messageBase64] = token.split('.');
     
-    if (!address || !signature || !message) {
+    if (!address || !signatureBase64 || !messageBase64) {
       return res.status(401).json({ error: 'Invalid token format' });
     }
 
     // 驗證地址格式
+    let publicKey: PublicKey;
     try {
-      new PublicKey(address);
+      publicKey = new PublicKey(address);
     } catch {
       return res.status(401).json({ error: 'Invalid wallet address' });
     }
 
-    // TODO: 實際簽名驗證需要前端配合實作
-    // 暫時只驗證格式
+    // 解碼簽名和訊息
+    const signature = Uint8Array.from(atob(signatureBase64), c => c.charCodeAt(0));
+    const message = atob(messageBase64);
+    const messageBytes = new TextEncoder().encode(message);
+
+    // 驗證簽名
+    const isValid = nacl.sign.detached.verify(
+      messageBytes,
+      signature,
+      publicKey.toBytes()
+    );
+
+    if (!isValid) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    // 檢查時間戳（防止重放攻擊）
+    const match = message.match(/Authenticate for zuvi: (\d+)/);
+    if (!match) {
+      return res.status(401).json({ error: 'Invalid message format' });
+    }
+
+    const timestamp = parseInt(match[1]);
+    const now = Date.now();
+    const maxAge = 5 * 60 * 1000; // 5 分鐘
+
+    if (now - timestamp > maxAge) {
+      return res.status(401).json({ error: 'Token expired' });
+    }
     
     req.wallet = {
       address,
@@ -46,6 +74,7 @@ export async function verifyWallet(
     
     next();
   } catch (error) {
+    console.error('Auth error:', error);
     res.status(401).json({ error: 'Authentication failed' });
   }
 }

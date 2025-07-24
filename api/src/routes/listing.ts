@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { Connection, PublicKey, Transaction, SystemProgram } from '@solana/web3.js';
 import { Program, AnchorProvider, Idl } from '@coral-xyz/anchor';
@@ -8,11 +7,12 @@ import IDL from '../types/zuvi.json' assert { type: 'json' };
 import { verifyWallet, AuthRequest } from '../middleware/auth.ts';
 import { requireProperty } from '../middleware/attestation.ts';
 import { createLogger } from '../utils/logger.ts';
+import type { Zuvi } from '../types/zuvi.ts';
 
 const router = express.Router();
 const logger = createLogger();
 
-// 準備發布房源交易
+// 發布房源交易準備
 router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, res) => {
   try {
     const {
@@ -23,7 +23,6 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
       propertyDetailsHash
     } = req.body;
 
-    // 驗證參數
     if (!propertyId || !ownerAttestation || !monthlyRent || !depositMonths || !propertyDetailsHash) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -31,20 +30,18 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
     const connection = new Connection(`https://${process.env.RPC_ROOT}`);
     const programId = new PublicKey(process.env.ZUVI_PROGRAM_ID!);
     
-    // 創建 provider（只用於讀取）
     const provider = new AnchorProvider(
       connection,
       {} as any,
       { commitment: 'confirmed' }
     );
     
-    const program = new Program(IDL as Idl, provider);
+    const program = new Program<Zuvi>(IDL as any, provider);
     
-    // 獲取帳戶地址
     const owner = new PublicKey(req.wallet!.address);
     const usdcMint = new PublicKey(process.env.USDC_MINT!);
     
-    // 查找 PDA
+    // PDA
     const [platformPda] = PublicKey.findProgramAddressSync(
       [Buffer.from('platform')],
       programId
@@ -55,10 +52,9 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
       programId
     );
     
-    // 獲取平台資訊
-    const platform = await (program.account as any).platform.fetch(platformPda);
+    const platform = await program.account.platform.fetch(platformPda);
     
-    // 獲取 token 帳戶
+    // Token 帳戶
     const ownerUsdcAccount = await getAssociatedTokenAddress(
       usdcMint,
       owner
@@ -67,21 +63,20 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
     const platformUsdcAccount = await getAssociatedTokenAddress(
       usdcMint,
       platformPda,
-      true // allowOwnerOffCurve
+      true
     );
     
-    // 計算總費用
+    // 費用計算
     const listingFee = platform.listingFee.toNumber();
     const solPrice = await getSolPrice();
     
-    // 估算交易費用（約 10000 lamports）
-    const estimatedTxFee = 10000;
+    const estimatedTxFee = 10000; // lamports
     const txFeeInUsdc = Math.ceil((estimatedTxFee / 1_000_000_000) * solPrice * 1_000_000);
     
     const totalUsdc = listingFee + txFeeInUsdc;
     
     // 建立指令
-    const instruction = await (program.methods as any)
+    const instruction = await program.methods
       .listProperty(
         propertyId,
         ownerAttestation,
@@ -89,7 +84,7 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
         depositMonths,
         propertyDetailsHash
       )
-      .accounts({
+      .accountsPartial({
         platform: platformPda,
         listing: listingPda,
         owner,
@@ -101,7 +96,7 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
       })
       .instruction();
     
-    // 建立交易
+    // 交易組裝
     const transaction = new Transaction();
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
     
@@ -109,7 +104,6 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
     transaction.feePayer = owner;
     transaction.add(instruction);
     
-    // 序列化交易
     const serializedTransaction = transaction.serialize({
       requireAllSignatures: false
     }).toString('base64');
@@ -141,10 +135,8 @@ router.post('/execute', verifyWallet, async (req: AuthRequest, res) => {
     
     const connection = new Connection(`https://${process.env.RPC_ROOT}`);
     
-    // 反序列化交易
     const tx = Transaction.from(Buffer.from(signedTransaction, 'base64'));
     
-    // 發送交易
     const signature = await connection.sendRawTransaction(
       tx.serialize(),
       { skipPreflight: false, maxRetries: 3 }
@@ -152,7 +144,6 @@ router.post('/execute', verifyWallet, async (req: AuthRequest, res) => {
     
     logger.info('Transaction sent:', signature);
     
-    // 確認交易
     const confirmation = await connection.confirmTransaction({
       signature,
       blockhash: tx.recentBlockhash!,
@@ -173,7 +164,7 @@ router.post('/execute', verifyWallet, async (req: AuthRequest, res) => {
   }
 });
 
-// 獲取 SOL 價格（從 price service）
+// SOL 價格查詢
 async function getSolPrice(): Promise<number> {
   try {
     const response = await fetch(`http://localhost:${process.env.PORT || 3002}/api/price/sol`);
@@ -184,8 +175,7 @@ async function getSolPrice(): Promise<number> {
     return data.price;
   } catch (error) {
     logger.error('Failed to get SOL price:', error);
-    // 使用預設價格
-    return 100;
+    throw new Error('SOL price service unavailable');
   }
 }
 

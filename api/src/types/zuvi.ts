@@ -9,15 +9,11 @@ export type Zuvi = {
   "metadata": {
     "name": "zuvi",
     "version": "0.1.0",
-    "spec": "0.1.0",
-    "description": "Solana rental platform with VC integration"
+    "spec": "0.1.0"
   },
   "instructions": [
     {
       "name": "acceptApplication",
-      "docs": [
-        "房東接受申請"
-      ],
       "discriminator": [
         32,
         123,
@@ -30,8 +26,7 @@ export type Zuvi = {
       ],
       "accounts": [
         {
-          "name": "listing",
-          "writable": true
+          "name": "listing"
         },
         {
           "name": "application",
@@ -50,9 +45,6 @@ export type Zuvi = {
     },
     {
       "name": "applyForRental",
-      "docs": [
-        "申請租房"
-      ],
       "discriminator": [
         61,
         26,
@@ -126,9 +118,6 @@ export type Zuvi = {
     },
     {
       "name": "createContract",
-      "docs": [
-        "創建租賃合約"
-      ],
       "discriminator": [
         244,
         48,
@@ -235,9 +224,6 @@ export type Zuvi = {
     },
     {
       "name": "delistProperty",
-      "docs": [
-        "下架房源"
-      ],
       "discriminator": [
         239,
         82,
@@ -262,9 +248,6 @@ export type Zuvi = {
     },
     {
       "name": "initializePlatform",
-      "docs": [
-        "初始化平台"
-      ],
       "discriminator": [
         119,
         201,
@@ -330,9 +313,6 @@ export type Zuvi = {
     },
     {
       "name": "listProperty",
-      "docs": [
-        "發布房源"
-      ],
       "discriminator": [
         254,
         101,
@@ -439,9 +419,6 @@ export type Zuvi = {
     },
     {
       "name": "payMonthlyRent",
-      "docs": [
-        "支付月租"
-      ],
       "discriminator": [
         144,
         48,
@@ -544,9 +521,6 @@ export type Zuvi = {
     },
     {
       "name": "rejectApplication",
-      "docs": [
-        "房東拒絕申請"
-      ],
       "discriminator": [
         85,
         73,
@@ -578,9 +552,6 @@ export type Zuvi = {
     },
     {
       "name": "reportDispute",
-      "docs": [
-        "提出爭議"
-      ],
       "discriminator": [
         229,
         114,
@@ -594,11 +565,6 @@ export type Zuvi = {
       "accounts": [
         {
           "name": "contract"
-        },
-        {
-          "name": "initiator",
-          "writable": true,
-          "signer": true
         },
         {
           "name": "disputeRecord",
@@ -629,6 +595,11 @@ export type Zuvi = {
           }
         },
         {
+          "name": "initiator",
+          "writable": true,
+          "signer": true
+        },
+        {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
         },
@@ -650,9 +621,6 @@ export type Zuvi = {
     },
     {
       "name": "respondToDispute",
-      "docs": [
-        "回應爭議"
-      ],
       "discriminator": [
         212,
         2,
@@ -686,9 +654,6 @@ export type Zuvi = {
     },
     {
       "name": "signContractAndPay",
-      "docs": [
-        "租客簽署合約並支付押金+首月租金"
-      ],
       "discriminator": [
         215,
         129,
@@ -743,32 +708,7 @@ export type Zuvi = {
         },
         {
           "name": "escrowTokenAccount",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  101,
-                  115,
-                  99,
-                  114,
-                  111,
-                  119,
-                  95,
-                  116,
-                  111,
-                  107,
-                  101,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "contract"
-              }
-            ]
-          }
+          "writable": true
         },
         {
           "name": "escrowPda",
@@ -793,14 +733,11 @@ export type Zuvi = {
           }
         },
         {
-          "name": "usdcMint"
-        },
-        {
           "name": "platformUsdcAccount",
           "writable": true
         },
         {
-          "name": "depositPaymentRecord",
+          "name": "paymentRecord",
           "writable": true,
           "pda": {
             "seeds": [
@@ -823,53 +760,13 @@ export type Zuvi = {
               {
                 "kind": "const",
                 "value": [
-                  100,
-                  101,
-                  112,
-                  111,
-                  115,
                   105,
-                  116
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "firstMonthPaymentRecord",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  112,
+                  110,
+                  105,
+                  116,
+                  105,
                   97,
-                  121,
-                  109,
-                  101,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "contract"
-              },
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  105,
-                  114,
-                  115,
-                  116,
-                  95,
-                  109,
-                  111,
-                  110,
-                  116,
-                  104
+                  108
                 ]
               }
             ]
@@ -892,9 +789,6 @@ export type Zuvi = {
     },
     {
       "name": "terminateContract",
-      "docs": [
-        "正常退租"
-      ],
       "discriminator": [
         39,
         195,
@@ -1029,9 +923,6 @@ export type Zuvi = {
     },
     {
       "name": "withdrawFees",
-      "docs": [
-        "提取平台費用"
-      ],
       "discriminator": [
         198,
         212,
@@ -1271,12 +1162,12 @@ export type Zuvi = {
     {
       "code": 6003,
       "name": "invalidPropertyId",
-      "msg": "無效的房產 ID"
+      "msg": "無效房產 ID"
     },
     {
       "code": 6004,
       "name": "invalidAttestation",
-      "msg": "無效的 attestation"
+      "msg": ""
     },
     {
       "code": 6005,
@@ -1485,10 +1376,10 @@ export type Zuvi = {
             "name": "active"
           },
           {
-            "name": "terminated"
+            "name": "completed"
           },
           {
-            "name": "completed"
+            "name": "terminated"
           }
         ]
       }
@@ -1674,6 +1565,18 @@ export type Zuvi = {
             "type": "pubkey"
           },
           {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
             "name": "paymentType",
             "type": {
               "defined": {
@@ -1682,30 +1585,14 @@ export type Zuvi = {
             }
           },
           {
-            "name": "amount",
-            "type": "u64"
-          },
-          {
-            "name": "payer",
-            "type": "pubkey"
-          },
-          {
-            "name": "receiver",
-            "type": "pubkey"
-          },
-          {
             "name": "paymentMonth",
             "type": {
               "option": "string"
             }
           },
           {
-            "name": "paidAt",
+            "name": "timestamp",
             "type": "i64"
-          },
-          {
-            "name": "transactionSignature",
-            "type": "string"
           },
           {
             "name": "bump",
@@ -1723,10 +1610,13 @@ export type Zuvi = {
             "name": "deposit"
           },
           {
-            "name": "firstMonth"
+            "name": "firstMonthRent"
           },
           {
             "name": "monthlyRent"
+          },
+          {
+            "name": "platformFee"
           },
           {
             "name": "depositRefund"
@@ -1764,12 +1654,12 @@ export type Zuvi = {
             "type": "u64"
           },
           {
-            "name": "totalFeesCollected",
-            "type": "u64"
-          },
-          {
             "name": "isInitialized",
             "type": "bool"
+          },
+          {
+            "name": "totalFeesCollected",
+            "type": "u64"
           },
           {
             "name": "bump",
@@ -1812,12 +1702,12 @@ export type Zuvi = {
         "kind": "struct",
         "fields": [
           {
-            "name": "propertyId",
-            "type": "string"
-          },
-          {
             "name": "owner",
             "type": "pubkey"
+          },
+          {
+            "name": "propertyId",
+            "type": "string"
           },
           {
             "name": "ownerAttestation",
@@ -1836,23 +1726,17 @@ export type Zuvi = {
             "type": "string"
           },
           {
+            "name": "currentContract",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
             "name": "status",
             "type": {
               "defined": {
                 "name": "listingStatus"
               }
-            }
-          },
-          {
-            "name": "currentTenant",
-            "type": {
-              "option": "pubkey"
-            }
-          },
-          {
-            "name": "currentContract",
-            "type": {
-              "option": "pubkey"
             }
           },
           {
@@ -2008,4 +1892,3 @@ export type Zuvi = {
     }
   ]
 };
-export { Zuvi as IDL };

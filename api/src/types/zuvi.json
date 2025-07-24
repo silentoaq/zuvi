@@ -1,17 +1,13 @@
 {
-  "address": "2h2Gw1oK7zNHed7GBXFShqvJGzBaVkPEMB7EDRUcVdct",
+  "address": "6gm4qAkiwmX7ticJdv25K3vB5etd8rsbDMJ24xTu9jN",
   "metadata": {
     "name": "zuvi",
     "version": "0.1.0",
-    "spec": "0.1.0",
-    "description": "Solana rental platform with VC integration"
+    "spec": "0.1.0"
   },
   "instructions": [
     {
       "name": "accept_application",
-      "docs": [
-        "房東接受申請"
-      ],
       "discriminator": [
         32,
         123,
@@ -24,8 +20,7 @@
       ],
       "accounts": [
         {
-          "name": "listing",
-          "writable": true
+          "name": "listing"
         },
         {
           "name": "application",
@@ -44,9 +39,6 @@
     },
     {
       "name": "apply_for_rental",
-      "docs": [
-        "申請租房"
-      ],
       "discriminator": [
         61,
         26,
@@ -120,9 +112,6 @@
     },
     {
       "name": "create_contract",
-      "docs": [
-        "創建租賃合約"
-      ],
       "discriminator": [
         244,
         48,
@@ -229,9 +218,6 @@
     },
     {
       "name": "delist_property",
-      "docs": [
-        "下架房源"
-      ],
       "discriminator": [
         239,
         82,
@@ -256,9 +242,6 @@
     },
     {
       "name": "initialize_platform",
-      "docs": [
-        "初始化平台"
-      ],
       "discriminator": [
         119,
         201,
@@ -324,9 +307,6 @@
     },
     {
       "name": "list_property",
-      "docs": [
-        "發布房源"
-      ],
       "discriminator": [
         254,
         101,
@@ -433,9 +413,6 @@
     },
     {
       "name": "pay_monthly_rent",
-      "docs": [
-        "支付月租"
-      ],
       "discriminator": [
         144,
         48,
@@ -538,9 +515,6 @@
     },
     {
       "name": "reject_application",
-      "docs": [
-        "房東拒絕申請"
-      ],
       "discriminator": [
         85,
         73,
@@ -572,9 +546,6 @@
     },
     {
       "name": "report_dispute",
-      "docs": [
-        "提出爭議"
-      ],
       "discriminator": [
         229,
         114,
@@ -588,11 +559,6 @@
       "accounts": [
         {
           "name": "contract"
-        },
-        {
-          "name": "initiator",
-          "writable": true,
-          "signer": true
         },
         {
           "name": "dispute_record",
@@ -623,6 +589,11 @@
           }
         },
         {
+          "name": "initiator",
+          "writable": true,
+          "signer": true
+        },
+        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         },
@@ -644,9 +615,6 @@
     },
     {
       "name": "respond_to_dispute",
-      "docs": [
-        "回應爭議"
-      ],
       "discriminator": [
         212,
         2,
@@ -680,9 +648,6 @@
     },
     {
       "name": "sign_contract_and_pay",
-      "docs": [
-        "租客簽署合約並支付押金+首月租金"
-      ],
       "discriminator": [
         215,
         129,
@@ -737,32 +702,7 @@
         },
         {
           "name": "escrow_token_account",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  101,
-                  115,
-                  99,
-                  114,
-                  111,
-                  119,
-                  95,
-                  116,
-                  111,
-                  107,
-                  101,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "contract"
-              }
-            ]
-          }
+          "writable": true
         },
         {
           "name": "escrow_pda",
@@ -787,14 +727,11 @@
           }
         },
         {
-          "name": "usdc_mint"
-        },
-        {
           "name": "platform_usdc_account",
           "writable": true
         },
         {
-          "name": "deposit_payment_record",
+          "name": "payment_record",
           "writable": true,
           "pda": {
             "seeds": [
@@ -817,53 +754,13 @@
               {
                 "kind": "const",
                 "value": [
-                  100,
-                  101,
-                  112,
-                  111,
-                  115,
                   105,
-                  116
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "first_month_payment_record",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  112,
+                  110,
+                  105,
+                  116,
+                  105,
                   97,
-                  121,
-                  109,
-                  101,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "contract"
-              },
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  105,
-                  114,
-                  115,
-                  116,
-                  95,
-                  109,
-                  111,
-                  110,
-                  116,
-                  104
+                  108
                 ]
               }
             ]
@@ -886,9 +783,6 @@
     },
     {
       "name": "terminate_contract",
-      "docs": [
-        "正常退租"
-      ],
       "discriminator": [
         39,
         195,
@@ -1023,9 +917,6 @@
     },
     {
       "name": "withdraw_fees",
-      "docs": [
-        "提取平台費用"
-      ],
       "discriminator": [
         198,
         212,
@@ -1250,32 +1141,32 @@
     {
       "code": 6000,
       "name": "PlatformAlreadyInitialized",
-      "msg": "平台已經初始化"
+      "msg": "平台已初始化"
     },
     {
       "code": 6001,
       "name": "PlatformNotInitialized",
-      "msg": "平台尚未初始化"
+      "msg": "平台未初始化"
     },
     {
       "code": 6002,
       "name": "InvalidFeeAmount",
-      "msg": "無效的費用金額"
+      "msg": "無效費用金額"
     },
     {
       "code": 6003,
       "name": "InvalidPropertyId",
-      "msg": "無效的房產 ID"
+      "msg": "無效房產 ID"
     },
     {
       "code": 6004,
       "name": "InvalidAttestation",
-      "msg": "無效的 attestation"
+      "msg": "無效憑證"
     },
     {
       "code": 6005,
       "name": "PropertyAlreadyListed",
-      "msg": "房產已經上架"
+      "msg": "房產已上架"
     },
     {
       "code": 6006,
@@ -1285,12 +1176,12 @@
     {
       "code": 6007,
       "name": "InvalidListingStatus",
-      "msg": "房源狀態不正確"
+      "msg": "房源狀態錯誤"
     },
     {
       "code": 6008,
       "name": "NotPropertyOwner",
-      "msg": "您不是房源的擁有者"
+      "msg": "非房源擁有者"
     },
     {
       "code": 6009,
@@ -1300,12 +1191,12 @@
     {
       "code": 6010,
       "name": "InvalidApplicationStatus",
-      "msg": "申請狀態不正確"
+      "msg": "申請狀態錯誤"
     },
     {
       "code": 6011,
       "name": "NotApplicant",
-      "msg": "您不是申請人"
+      "msg": "非申請人"
     },
     {
       "code": 6012,
@@ -1315,77 +1206,77 @@
     {
       "code": 6013,
       "name": "InvalidContractStatus",
-      "msg": "合約狀態不正確"
+      "msg": "合約狀態錯誤"
     },
     {
       "code": 6014,
       "name": "NotContractParty",
-      "msg": "您不是合約的參與方"
+      "msg": "非合約參與方"
     },
     {
       "code": 6015,
       "name": "InvalidPaymentDay",
-      "msg": "無效的付款日期"
+      "msg": "無效付款日"
     },
     {
       "code": 6016,
       "name": "InvalidContractDuration",
-      "msg": "無效的租約期限"
+      "msg": "無效租約期限"
     },
     {
       "code": 6017,
       "name": "ContractStartDateMustBeFuture",
-      "msg": "租約開始日期必須在未來"
+      "msg": "開始日期須為未來"
     },
     {
       "code": 6018,
       "name": "ContractEndDateMustBeAfterStart",
-      "msg": "租約結束日期必須在開始日期之後"
+      "msg": "結束日期須晚於開始"
     },
     {
       "code": 6019,
       "name": "DepositMustBeGreaterThanZero",
-      "msg": "押金必須大於零"
+      "msg": "押金須大於零"
     },
     {
       "code": 6020,
       "name": "RentMustBeGreaterThanZero",
-      "msg": "月租金必須大於零"
+      "msg": "月租須大於零"
     },
     {
       "code": 6021,
       "name": "IncorrectPaymentAmount",
-      "msg": "支付金額不正確"
+      "msg": "支付金額錯誤"
     },
     {
       "code": 6022,
       "name": "RentAlreadyPaidForMonth",
-      "msg": "本月租金已支付"
+      "msg": "本月已付租金"
     },
     {
       "code": 6023,
       "name": "ContractNotStarted",
-      "msg": "合約尚未開始"
+      "msg": "合約未開始"
     },
     {
       "code": 6024,
       "name": "ContractEnded",
-      "msg": "合約已經結束"
+      "msg": "合約已結束"
     },
     {
       "code": 6025,
       "name": "DepositAlreadyRefunded",
-      "msg": "押金已經退還"
+      "msg": "押金已退還"
     },
     {
       "code": 6026,
       "name": "UnpaidRentExists",
-      "msg": "尚有未支付的租金"
+      "msg": "有未付租金"
     },
     {
       "code": 6027,
       "name": "Unauthorized",
-      "msg": "無權限執行此操作"
+      "msg": "無權限"
     },
     {
       "code": 6028,
@@ -1395,17 +1286,17 @@
     {
       "code": 6029,
       "name": "InvalidWithdrawAmount",
-      "msg": "無效的提取金額"
+      "msg": "無效提取金額"
     },
     {
       "code": 6030,
       "name": "StringTooLong",
-      "msg": "字串長度超過限制"
+      "msg": "字串過長"
     },
     {
       "code": 6031,
       "name": "InvalidDisputeStatus",
-      "msg": "爭議狀態不正確"
+      "msg": "爭議狀態錯誤"
     },
     {
       "code": 6032,
@@ -1479,10 +1370,10 @@
             "name": "Active"
           },
           {
-            "name": "Terminated"
+            "name": "Completed"
           },
           {
-            "name": "Completed"
+            "name": "Terminated"
           }
         ]
       }
@@ -1668,6 +1559,18 @@
             "type": "pubkey"
           },
           {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
             "name": "payment_type",
             "type": {
               "defined": {
@@ -1676,30 +1579,14 @@
             }
           },
           {
-            "name": "amount",
-            "type": "u64"
-          },
-          {
-            "name": "payer",
-            "type": "pubkey"
-          },
-          {
-            "name": "receiver",
-            "type": "pubkey"
-          },
-          {
             "name": "payment_month",
             "type": {
               "option": "string"
             }
           },
           {
-            "name": "paid_at",
+            "name": "timestamp",
             "type": "i64"
-          },
-          {
-            "name": "transaction_signature",
-            "type": "string"
           },
           {
             "name": "bump",
@@ -1717,10 +1604,13 @@
             "name": "Deposit"
           },
           {
-            "name": "FirstMonth"
+            "name": "FirstMonthRent"
           },
           {
             "name": "MonthlyRent"
+          },
+          {
+            "name": "PlatformFee"
           },
           {
             "name": "DepositRefund"
@@ -1758,12 +1648,12 @@
             "type": "u64"
           },
           {
-            "name": "total_fees_collected",
-            "type": "u64"
-          },
-          {
             "name": "is_initialized",
             "type": "bool"
+          },
+          {
+            "name": "total_fees_collected",
+            "type": "u64"
           },
           {
             "name": "bump",
@@ -1806,12 +1696,12 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "property_id",
-            "type": "string"
-          },
-          {
             "name": "owner",
             "type": "pubkey"
+          },
+          {
+            "name": "property_id",
+            "type": "string"
           },
           {
             "name": "owner_attestation",
@@ -1830,23 +1720,17 @@
             "type": "string"
           },
           {
+            "name": "current_contract",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
             "name": "status",
             "type": {
               "defined": {
                 "name": "ListingStatus"
               }
-            }
-          },
-          {
-            "name": "current_tenant",
-            "type": {
-              "option": "pubkey"
-            }
-          },
-          {
-            "name": "current_contract",
-            "type": {
-              "option": "pubkey"
             }
           },
           {

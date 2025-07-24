@@ -20,6 +20,7 @@ const initializeConnection = () => {
   }
 };
 
+// 獲取房源列表
 router.get('/', async (req, res) => {
   try {
     initializeConnection();
@@ -59,6 +60,7 @@ router.get('/', async (req, res) => {
   }
 });
 
+// 獲取單個房源詳情
 router.get('/:propertyId', async (req, res) => {
   try {
     initializeConnection();
@@ -90,7 +92,6 @@ router.get('/:propertyId', async (req, res) => {
         depositMonths: listing.depositMonths,
         propertyDetailsHash: listing.propertyDetailsHash,
         status: listing.status,
-        currentTenant: listing.currentTenant?.toString() || null,
         currentContract: listing.currentContract?.toString() || null,
         createdAt: listing.createdAt.toNumber()
       });

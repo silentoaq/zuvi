@@ -4,13 +4,13 @@ import { createLogger } from '../utils/logger.ts';
 const router = express.Router();
 const logger = createLogger();
 
-// SOL 價格快取（5分鐘）
+// SOL 價格快取
 let priceCache: {
   price: number;
   timestamp: number;
 } | null = null;
 
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 5 * 60 * 1000; // 5 分鐘
 
 // 取得 SOL 價格
 router.get('/sol', async (req, res) => {
@@ -43,8 +43,8 @@ router.get('/sol', async (req, res) => {
     });
   } catch (error) {
     logger.error('Failed to fetch SOL price:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch SOL price' 
+    res.status(503).json({ 
+      error: 'SOL price service unavailable' 
     });
   }
 });
@@ -90,7 +90,7 @@ router.post('/calculate-fee', async (req, res) => {
     // 計算 USDC 金額
     const sol = lamports / 1_000_000_000;
     const usdcAmount = sol * solPrice;
-    const usdcMicroAmount = Math.ceil(usdcAmount * 1_000_000); // USDC 有 6 位小數
+    const usdcMicroAmount = Math.ceil(usdcAmount * 1_000_000); // USDC 6 位小數
 
     res.json({
       lamports,

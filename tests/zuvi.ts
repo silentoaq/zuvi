@@ -11,13 +11,11 @@ import {
 } from "@solana/spl-token";
 
 describe("zuvi", () => {
-  // Configure the client to use the local cluster
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
   const program = anchor.workspace.Zuvi as Program<Zuvi>;
   
-  // Test accounts
   let usdcMint: PublicKey;
   let platformPda: PublicKey;
   let mintAuthority: Keypair;
@@ -25,7 +23,6 @@ describe("zuvi", () => {
   let tenant: Keypair;
   let feeReceiver: Keypair;
   
-  // Token accounts
   let landlordUsdcAccount: any;
   let tenantUsdcAccount: any;
   let feeReceiverUsdcAccount: any;
@@ -38,31 +35,26 @@ describe("zuvi", () => {
   };
 
   before(async () => {
-    // Generate test keypairs
     mintAuthority = Keypair.generate();
     landlord = Keypair.generate();
     tenant = Keypair.generate();
     feeReceiver = Keypair.generate();
 
-    // Airdrop SOL to test accounts
     await provider.connection.requestAirdrop(mintAuthority.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL);
     await provider.connection.requestAirdrop(landlord.publicKey, 10 * anchor.web3.LAMPORTS_PER_SOL);
     await provider.connection.requestAirdrop(tenant.publicKey, 10 * anchor.web3.LAMPORTS_PER_SOL);
     await provider.connection.requestAirdrop(feeReceiver.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL);
-    
-    // Wait for airdrops to confirm
+
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // Create mock USDC mint
     usdcMint = await createMint(
       provider.connection,
-      mintAuthority,  // payer
-      mintAuthority.publicKey,  // mint authority
+      mintAuthority,
+      mintAuthority.publicKey,
       null,
-      6 // USDC has 6 decimals
+      6
     );
 
-    // Create token accounts
     landlordUsdcAccount = await getOrCreateAssociatedTokenAccount(
       provider.connection,
       landlord,
@@ -84,32 +76,29 @@ describe("zuvi", () => {
       feeReceiver.publicKey
     );
 
-    // Mint USDC to test accounts
     await mintTo(
       provider.connection,
-      mintAuthority,  // payer
+      mintAuthority,
       usdcMint,
       landlordUsdcAccount.address,
-      mintAuthority,  // mint authority (as Keypair)
-      10_000_000_000 // 10,000 USDC
+      mintAuthority.publicKey,
+      10_000_000_000
     );
 
     await mintTo(
       provider.connection,
-      mintAuthority,  // payer
+      mintAuthority,
       usdcMint,
       tenantUsdcAccount.address,
-      mintAuthority,  // mint authority (as Keypair)
-      10_000_000_000 // 10,000 USDC
+      mintAuthority.publicKey,
+      10_000_000_000
     );
 
-    // Find platform PDA
     [platformPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("platform")],
       program.programId
     );
 
-    // Create platform token account
     platformUsdcAccount = await getOrCreateAssociatedTokenAccount(
       provider.connection,
       feeReceiver,
@@ -182,8 +171,6 @@ describe("zuvi", () => {
     assert.equal(listing.monthlyRent.toNumber(), monthlyRent.toNumber());
     assert.equal(listing.depositMonths, depositMonths);
     assert.equal(listing.propertyDetailsHash, propertyDetailsHash);
-    assert.deepEqual(listing.status, { available: {} }); // Anchor enum format
+    assert.deepEqual(listing.status, { available: {} });
   });
-
-  // 可以繼續添加更多測試...
 });

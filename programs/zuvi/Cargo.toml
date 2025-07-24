@@ -1,7 +1,6 @@
 [package]
 name = "zuvi"
 version = "0.1.0"
-description = "Solana rental platform with VC integration"
 edition = "2021"
 
 [lib]

@@ -3,17 +3,18 @@ use anchor_lang::emit;
 use anchor_spl::token::{self, Token, Transfer};
 use anchor_spl::token_interface::TokenAccount;
 use crate::errors::ZuviError;
-use crate::state::{Platform, PropertyListing, ListingStatus, PropertyListed};
+use crate::state::{Platform, PropertyListing, ListingStatus};
+use crate::events::PropertyListed;
 
 #[derive(Accounts)]
 #[instruction(property_id: String)]
 pub struct ListProperty<'info> {
     #[account(
         seeds = [b"platform"],
-        bump = platform.bump,
+        bump,
         constraint = platform.is_initialized @ ZuviError::PlatformNotInitialized
     )]
-    pub platform: Account<'info, Platform>,
+    pub platform: Box<Account<'info, Platform>>,
 
     #[account(
         init,
@@ -22,7 +23,7 @@ pub struct ListProperty<'info> {
         seeds = [b"listing", property_id.as_bytes()],
         bump
     )]
-    pub listing: Account<'info, PropertyListing>,
+    pub listing: Box<Account<'info, PropertyListing>>,
 
     #[account(mut)]
     pub owner: Signer<'info>,
@@ -46,7 +47,7 @@ pub struct ListProperty<'info> {
     pub clock: Sysvar<'info, Clock>,
 }
 
-pub fn list_property(
+pub fn list(
     ctx: Context<ListProperty>,
     property_id: String,
     owner_attestation: String,
@@ -54,55 +55,75 @@ pub fn list_property(
     deposit_months: u8,
     property_details_hash: String,
 ) -> Result<()> {
-    let platform = &ctx.accounts.platform;
-    let listing = &mut ctx.accounts.listing;
+    let platform = &*ctx.accounts.platform;
+    let listing = &mut *ctx.accounts.listing;
     let clock = &ctx.accounts.clock;
 
-    // 驗證輸入
+    // 驗證
     require!(property_id.len() <= 64, ZuviError::StringTooLong);
     require!(owner_attestation.len() <= 128, ZuviError::StringTooLong);
     require!(property_details_hash.len() <= 64, ZuviError::StringTooLong);
     require!(monthly_rent > 0, ZuviError::RentMustBeGreaterThanZero);
     require!(deposit_months > 0, ZuviError::DepositMustBeGreaterThanZero);
-
-    // 驗證 attestation 格式 (簡單檢查)
     require!(!owner_attestation.is_empty(), ZuviError::InvalidAttestation);
 
-    // 支付發布費用
+    // 支付費用
     let cpi_accounts = Transfer {
         from: ctx.accounts.owner_usdc_account.to_account_info(),
         to: ctx.accounts.platform_usdc_account.to_account_info(),
         authority: ctx.accounts.owner.to_account_info(),
     };
-    let cpi_program = ctx.accounts.token_program.to_account_info();
-    let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
-    token::transfer(cpi_ctx, platform.listing_fee)?;
+    token::transfer(
+        CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts),
+        platform.listing_fee
+    )?;
 
     // 初始化房源
-    listing.property_id = property_id;
     listing.owner = ctx.accounts.owner.key();
+    listing.property_id = property_id.clone();
     listing.owner_attestation = owner_attestation;
     listing.monthly_rent = monthly_rent;
     listing.deposit_months = deposit_months;
     listing.property_details_hash = property_details_hash;
-    listing.status = ListingStatus::Available;
-    listing.current_tenant = None;
     listing.current_contract = None;
+    listing.status = ListingStatus::Available;
     listing.created_at = clock.unix_timestamp;
-    listing.bump = ctx.bumps.listing;
+    let (_, bump) = Pubkey::find_program_address(
+        &[b"listing", property_id.as_bytes()],
+        &crate::ID
+    );
+    listing.bump = bump;
 
-    msg!("Property listed successfully");
-    msg!("Property ID: {}", listing.property_id);
-    msg!("Monthly rent: {} USDC", monthly_rent);
-    msg!("Deposit: {} months", deposit_months);
-
+    // 發送事件
     emit!(PropertyListed {
         listing: listing.key(),
         owner: listing.owner,
-        property_id: listing.property_id.clone(),
-        monthly_rent: listing.monthly_rent,
+        property_id,
+        monthly_rent,
         timestamp: clock.unix_timestamp,
     });
+
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct DelistProperty<'info> {
+    #[account(
+        mut,
+        constraint = listing.owner == owner.key() @ ZuviError::NotPropertyOwner,
+        constraint = listing.status == ListingStatus::Available @ ZuviError::InvalidListingStatus
+    )]
+    pub listing: Account<'info, PropertyListing>,
+
+    pub owner: Signer<'info>,
+}
+
+pub fn delist(ctx: Context<DelistProperty>) -> Result<()> {
+    let listing = &mut ctx.accounts.listing;
+    
+    listing.status = ListingStatus::Delisted;
+    
+    msg!("房源已下架: {}", listing.property_id);
 
     Ok(())
 }

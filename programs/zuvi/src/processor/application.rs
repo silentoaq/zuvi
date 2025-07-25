@@ -74,7 +74,7 @@ pub fn accept(ctx: Context<AcceptApplication>) -> Result<()> {
     Ok(())
 }
 
-pub fn reject(ctx: Context<RejectApplication>) -> Result<()> {
+pub fn reject(_ctx: Context<RejectApplication>) -> Result<()> {
     // 帳戶會自動關閉
     Ok(())
 }

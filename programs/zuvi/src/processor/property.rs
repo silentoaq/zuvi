@@ -58,7 +58,7 @@ pub fn list(
     Ok(())
 }
 
-pub fn delist(ctx: Context<DelistProperty>) -> Result<()> {
+pub fn delist(_ctx: Context<DelistProperty>) -> Result<()> {
     // 帳戶會自動關閉，返還租金給 owner
     Ok(())
 }

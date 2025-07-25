@@ -151,10 +151,11 @@ pub fn terminate(ctx: Context<TerminateContract>, reason: String) -> Result<()> 
 
     // 退還押金
     let contract_key = contract.key();
+    let escrow_bump = ctx.bumps.escrow_pda;  // 使用 context 中的 bump
     let seeds = &[
         b"escrow".as_ref(),
         contract_key.as_ref(),
-        &[ctx.accounts.escrow.bump],
+        &[escrow_bump],
     ];
     let signer = &[&seeds[..]];
 

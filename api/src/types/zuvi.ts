@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/zuvi.json`.
  */
 export type Zuvi = {
-  "address": "2h2Gw1oK7zNHed7GBXFShqvJGzBaVkPEMB7EDRUcVdct",
+  "address": "6gm4qAkiwmX7ticJdv25K3vB5etd8rsbDMJ24xTu9jN",
   "metadata": {
     "name": "zuvi",
     "version": "0.1.0",
@@ -44,16 +44,16 @@ export type Zuvi = {
       "args": []
     },
     {
-      "name": "applyForRental",
+      "name": "applyRental",
       "discriminator": [
-        61,
-        26,
-        207,
-        110,
-        237,
-        183,
-        191,
-        74
+        253,
+        118,
+        96,
+        111,
+        200,
+        52,
+        80,
+        49
       ],
       "accounts": [
         {
@@ -107,11 +107,64 @@ export type Zuvi = {
       ],
       "args": [
         {
-          "name": "applicantAttestation",
-          "type": "string"
+          "name": "attestPda",
+          "type": "pubkey"
         },
         {
-          "name": "proposedTerms",
+          "name": "offerRent",
+          "type": "u64"
+        },
+        {
+          "name": "offerDeposit",
+          "type": "u64"
+        },
+        {
+          "name": "offerHash",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "counterOffer",
+      "discriminator": [
+        212,
+        52,
+        120,
+        221,
+        104,
+        231,
+        68,
+        97
+      ],
+      "accounts": [
+        {
+          "name": "listing"
+        },
+        {
+          "name": "application",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "newRent",
+          "type": "u64"
+        },
+        {
+          "name": "newDeposit",
+          "type": "u64"
+        },
+        {
+          "name": "newHash",
           "type": "string"
         }
       ]
@@ -167,7 +220,7 @@ export type Zuvi = {
           }
         },
         {
-          "name": "escrowAccount",
+          "name": "escrow",
           "writable": true,
           "pda": {
             "seeds": [
@@ -205,19 +258,19 @@ export type Zuvi = {
       ],
       "args": [
         {
-          "name": "startDate",
+          "name": "start",
           "type": "i64"
         },
         {
-          "name": "endDate",
+          "name": "end",
           "type": "i64"
         },
         {
-          "name": "paymentDay",
+          "name": "payDay",
           "type": "u8"
         },
         {
-          "name": "contractHash",
+          "name": "cHash",
           "type": "string"
         }
       ]
@@ -241,6 +294,7 @@ export type Zuvi = {
         },
         {
           "name": "owner",
+          "writable": true,
           "signer": true
         }
       ],
@@ -298,15 +352,15 @@ export type Zuvi = {
       ],
       "args": [
         {
-          "name": "listingFee",
+          "name": "listFee",
           "type": "u64"
         },
         {
-          "name": "contractFee",
+          "name": "cFee",
           "type": "u64"
         },
         {
-          "name": "paymentFee",
+          "name": "payFee",
           "type": "u64"
         }
       ]
@@ -363,7 +417,7 @@ export type Zuvi = {
               },
               {
                 "kind": "arg",
-                "path": "propertyId"
+                "path": "attestPda"
               }
             ]
           }
@@ -374,11 +428,11 @@ export type Zuvi = {
           "signer": true
         },
         {
-          "name": "ownerUsdcAccount",
+          "name": "ownerUsdc",
           "writable": true
         },
         {
-          "name": "platformUsdcAccount",
+          "name": "platUsdc",
           "writable": true
         },
         {
@@ -396,38 +450,34 @@ export type Zuvi = {
       ],
       "args": [
         {
-          "name": "propertyId",
-          "type": "string"
+          "name": "attestPda",
+          "type": "pubkey"
         },
         {
-          "name": "ownerAttestation",
-          "type": "string"
-        },
-        {
-          "name": "monthlyRent",
+          "name": "mRent",
           "type": "u64"
         },
         {
-          "name": "depositMonths",
+          "name": "depMonths",
           "type": "u8"
         },
         {
-          "name": "propertyDetailsHash",
+          "name": "details",
           "type": "string"
         }
       ]
     },
     {
-      "name": "payMonthlyRent",
+      "name": "payRent",
       "discriminator": [
-        144,
-        48,
-        219,
-        104,
-        253,
-        102,
-        160,
-        11
+        69,
+        155,
+        112,
+        183,
+        178,
+        234,
+        94,
+        100
       ],
       "accounts": [
         {
@@ -460,15 +510,15 @@ export type Zuvi = {
           "signer": true
         },
         {
-          "name": "tenantUsdcAccount",
+          "name": "tUsdc",
           "writable": true
         },
         {
-          "name": "landlordUsdcAccount",
+          "name": "lUsdc",
           "writable": true
         },
         {
-          "name": "platformUsdcAccount",
+          "name": "platUsdc",
           "writable": true
         },
         {
@@ -494,7 +544,7 @@ export type Zuvi = {
               },
               {
                 "kind": "arg",
-                "path": "paymentMonth"
+                "path": "payMonth"
               }
             ]
           }
@@ -514,7 +564,7 @@ export type Zuvi = {
       ],
       "args": [
         {
-          "name": "paymentMonth",
+          "name": "payMonth",
           "type": "string"
         }
       ]
@@ -538,6 +588,9 @@ export type Zuvi = {
         {
           "name": "application",
           "writable": true
+        },
+        {
+          "name": "applicant"
         },
         {
           "name": "owner",
@@ -567,7 +620,7 @@ export type Zuvi = {
           "name": "contract"
         },
         {
-          "name": "disputeRecord",
+          "name": "dispute",
           "writable": true,
           "pda": {
             "seeds": [
@@ -614,26 +667,26 @@ export type Zuvi = {
           "type": "string"
         },
         {
-          "name": "evidenceHash",
+          "name": "eHash",
           "type": "string"
         }
       ]
     },
     {
-      "name": "respondToDispute",
+      "name": "respondDispute",
       "discriminator": [
-        212,
-        2,
-        194,
-        244,
-        37,
-        73,
-        173,
-        201
+        71,
+        136,
+        87,
+        127,
+        213,
+        117,
+        241,
+        1
       ],
       "accounts": [
         {
-          "name": "disputeRecord",
+          "name": "dispute",
           "writable": true
         },
         {
@@ -647,22 +700,22 @@ export type Zuvi = {
       ],
       "args": [
         {
-          "name": "responseEvidenceHash",
+          "name": "rHash",
           "type": "string"
         }
       ]
     },
     {
-      "name": "signContractAndPay",
+      "name": "signContract",
       "discriminator": [
-        215,
-        129,
-        7,
-        181,
-        238,
-        118,
-        172,
-        195
+        145,
+        83,
+        234,
+        177,
+        104,
+        87,
+        183,
+        156
       ],
       "accounts": [
         {
@@ -699,15 +752,15 @@ export type Zuvi = {
           "signer": true
         },
         {
-          "name": "tenantUsdcAccount",
+          "name": "tUsdc",
           "writable": true
         },
         {
-          "name": "landlordUsdcAccount",
+          "name": "lUsdc",
           "writable": true
         },
         {
-          "name": "escrowTokenAccount",
+          "name": "escrowUsdc",
           "writable": true
         },
         {
@@ -733,7 +786,7 @@ export type Zuvi = {
           }
         },
         {
-          "name": "platformUsdcAccount",
+          "name": "platUsdc",
           "writable": true
         },
         {
@@ -809,7 +862,7 @@ export type Zuvi = {
           "writable": true
         },
         {
-          "name": "escrowAccount",
+          "name": "escrow",
           "writable": true,
           "pda": {
             "seeds": [
@@ -837,15 +890,15 @@ export type Zuvi = {
           "signer": true
         },
         {
-          "name": "escrowTokenAccount",
+          "name": "escrowUsdc",
           "writable": true
         },
         {
-          "name": "tenantUsdcAccount",
+          "name": "tUsdc",
           "writable": true
         },
         {
-          "name": "refundPaymentRecord",
+          "name": "refundRecord",
           "writable": true,
           "pda": {
             "seeds": [
@@ -880,7 +933,7 @@ export type Zuvi = {
           }
         },
         {
-          "name": "escrowAuthority",
+          "name": "escrowPda",
           "pda": {
             "seeds": [
               {
@@ -959,11 +1012,11 @@ export type Zuvi = {
           "signer": true
         },
         {
-          "name": "platformUsdcAccount",
+          "name": "platUsdc",
           "writable": true
         },
         {
-          "name": "recipientUsdcAccount",
+          "name": "recipientUsdc",
           "writable": true
         },
         {
@@ -1146,172 +1199,122 @@ export type Zuvi = {
   "errors": [
     {
       "code": 6000,
-      "name": "platformAlreadyInitialized",
-      "msg": ""
-    },
-    {
-      "code": 6001,
       "name": "platformNotInitialized",
       "msg": ""
     },
     {
-      "code": 6002,
+      "code": 6001,
       "name": "invalidFeeAmount",
       "msg": ""
     },
     {
-      "code": 6003,
-      "name": "invalidPropertyId",
-      "msg": "無效房產 ID"
-    },
-    {
-      "code": 6004,
+      "code": 6002,
       "name": "invalidAttestation",
       "msg": ""
     },
     {
-      "code": 6005,
-      "name": "propertyAlreadyListed",
-      "msg": ""
-    },
-    {
-      "code": 6006,
-      "name": "listingNotFound",
-      "msg": ""
-    },
-    {
-      "code": 6007,
+      "code": 6003,
       "name": "invalidListingStatus",
       "msg": ""
     },
     {
-      "code": 6008,
+      "code": 6004,
       "name": "notPropertyOwner",
       "msg": ""
     },
     {
-      "code": 6009,
-      "name": "applicationNotFound",
-      "msg": ""
-    },
-    {
-      "code": 6010,
+      "code": 6005,
       "name": "invalidApplicationStatus",
       "msg": ""
     },
     {
-      "code": 6011,
-      "name": "notApplicant",
-      "msg": ""
-    },
-    {
-      "code": 6012,
-      "name": "contractNotFound",
-      "msg": ""
-    },
-    {
-      "code": 6013,
+      "code": 6006,
       "name": "invalidContractStatus",
       "msg": ""
     },
     {
-      "code": 6014,
+      "code": 6007,
       "name": "notContractParty",
       "msg": ""
     },
     {
-      "code": 6015,
+      "code": 6008,
       "name": "invalidPaymentDay",
       "msg": ""
     },
     {
-      "code": 6016,
-      "name": "invalidContractDuration",
-      "msg": ""
-    },
-    {
-      "code": 6017,
+      "code": 6009,
       "name": "contractStartDateMustBeFuture",
       "msg": ""
     },
     {
-      "code": 6018,
+      "code": 6010,
       "name": "contractEndDateMustBeAfterStart",
       "msg": ""
     },
     {
-      "code": 6019,
+      "code": 6011,
       "name": "depositMustBeGreaterThanZero",
       "msg": ""
     },
     {
-      "code": 6020,
+      "code": 6012,
       "name": "rentMustBeGreaterThanZero",
       "msg": ""
     },
     {
-      "code": 6021,
-      "name": "incorrectPaymentAmount",
-      "msg": ""
-    },
-    {
-      "code": 6022,
-      "name": "rentAlreadyPaidForMonth",
-      "msg": ""
-    },
-    {
-      "code": 6023,
+      "code": 6013,
       "name": "contractNotStarted",
       "msg": ""
     },
     {
-      "code": 6024,
+      "code": 6014,
       "name": "contractEnded",
       "msg": ""
     },
     {
-      "code": 6025,
+      "code": 6015,
       "name": "depositAlreadyRefunded",
       "msg": ""
     },
     {
-      "code": 6026,
-      "name": "unpaidRentExists",
-      "msg": ""
-    },
-    {
-      "code": 6027,
+      "code": 6016,
       "name": "unauthorized",
       "msg": ""
     },
     {
-      "code": 6028,
+      "code": 6017,
       "name": "insufficientBalance",
       "msg": ""
     },
     {
-      "code": 6029,
+      "code": 6018,
       "name": "invalidWithdrawAmount",
       "msg": ""
     },
     {
-      "code": 6030,
+      "code": 6019,
       "name": "stringTooLong",
       "msg": ""
     },
     {
-      "code": 6031,
+      "code": 6020,
       "name": "invalidDisputeStatus",
       "msg": ""
     },
     {
-      "code": 6032,
-      "name": "disputeAlreadyExists",
+      "code": 6021,
+      "name": "invalidCounterOffer",
       "msg": ""
     },
     {
-      "code": 6033,
-      "name": "disputeNotFound",
+      "code": 6022,
+      "name": "tooManyCounters",
+      "msg": ""
+    },
+    {
+      "code": 6023,
+      "name": "mustAcceptApplicantOffer",
       "msg": ""
     }
   ],
@@ -1325,13 +1328,16 @@ export type Zuvi = {
             "name": "pending"
           },
           {
+            "name": "negotiating"
+          },
+          {
             "name": "accepted"
           },
           {
             "name": "rejected"
           },
           {
-            "name": "cancelled"
+            "name": "expired"
           }
         ]
       }
@@ -1398,7 +1404,7 @@ export type Zuvi = {
             "type": "pubkey"
           },
           {
-            "name": "initiatedBy",
+            "name": "initiator",
             "type": "pubkey"
           },
           {
@@ -1418,7 +1424,7 @@ export type Zuvi = {
         "kind": "struct",
         "fields": [
           {
-            "name": "disputeId",
+            "name": "id",
             "type": "pubkey"
           },
           {
@@ -1426,7 +1432,7 @@ export type Zuvi = {
             "type": "pubkey"
           },
           {
-            "name": "initiatedBy",
+            "name": "initiator",
             "type": "pubkey"
           },
           {
@@ -1438,7 +1444,7 @@ export type Zuvi = {
             "type": "string"
           },
           {
-            "name": "evidenceHash",
+            "name": "eHash",
             "type": "string"
           },
           {
@@ -1450,15 +1456,15 @@ export type Zuvi = {
             }
           },
           {
-            "name": "createdAt",
+            "name": "created",
             "type": "i64"
           },
           {
-            "name": "updatedAt",
+            "name": "updated",
             "type": "i64"
           },
           {
-            "name": "resolutionNotes",
+            "name": "notes",
             "type": {
               "option": "string"
             }
@@ -1524,11 +1530,11 @@ export type Zuvi = {
             "type": "pubkey"
           },
           {
-            "name": "depositAmount",
+            "name": "deposit",
             "type": "u64"
           },
           {
-            "name": "depositRefunded",
+            "name": "refunded",
             "type": "bool"
           },
           {
@@ -1577,7 +1583,7 @@ export type Zuvi = {
             "type": "u64"
           },
           {
-            "name": "paymentType",
+            "name": "payType",
             "type": {
               "defined": {
                 "name": "paymentType"
@@ -1585,13 +1591,13 @@ export type Zuvi = {
             }
           },
           {
-            "name": "paymentMonth",
+            "name": "payMonth",
             "type": {
               "option": "string"
             }
           },
           {
-            "name": "timestamp",
+            "name": "txTime",
             "type": "i64"
           },
           {
@@ -1642,15 +1648,15 @@ export type Zuvi = {
             "type": "pubkey"
           },
           {
-            "name": "listingFee",
+            "name": "listFee",
             "type": "u64"
           },
           {
-            "name": "contractFee",
+            "name": "cFee",
             "type": "u64"
           },
           {
-            "name": "paymentFee",
+            "name": "payFee",
             "type": "u64"
           },
           {
@@ -1658,7 +1664,7 @@ export type Zuvi = {
             "type": "bool"
           },
           {
-            "name": "totalFeesCollected",
+            "name": "totalFees",
             "type": "u64"
           },
           {
@@ -1686,7 +1692,7 @@ export type Zuvi = {
             "type": "string"
           },
           {
-            "name": "monthlyRent",
+            "name": "mRent",
             "type": "u64"
           },
           {
@@ -1706,27 +1712,23 @@ export type Zuvi = {
             "type": "pubkey"
           },
           {
-            "name": "propertyId",
-            "type": "string"
+            "name": "attestPda",
+            "type": "pubkey"
           },
           {
-            "name": "ownerAttestation",
-            "type": "string"
-          },
-          {
-            "name": "monthlyRent",
+            "name": "mRent",
             "type": "u64"
           },
           {
-            "name": "depositMonths",
+            "name": "depMonths",
             "type": "u8"
           },
           {
-            "name": "propertyDetailsHash",
+            "name": "details",
             "type": "string"
           },
           {
-            "name": "currentContract",
+            "name": "curContract",
             "type": {
               "option": "pubkey"
             }
@@ -1740,7 +1742,7 @@ export type Zuvi = {
             }
           },
           {
-            "name": "createdAt",
+            "name": "created",
             "type": "i64"
           },
           {
@@ -1768,7 +1770,7 @@ export type Zuvi = {
             "type": "u64"
           },
           {
-            "name": "paymentMonth",
+            "name": "payMonth",
             "type": "string"
           },
           {
@@ -1792,12 +1794,28 @@ export type Zuvi = {
             "type": "pubkey"
           },
           {
-            "name": "applicantAttestation",
+            "name": "attestPda",
+            "type": "pubkey"
+          },
+          {
+            "name": "offerRent",
+            "type": "u64"
+          },
+          {
+            "name": "offerDeposit",
+            "type": "u64"
+          },
+          {
+            "name": "offerHash",
             "type": "string"
           },
           {
-            "name": "proposedTerms",
-            "type": "string"
+            "name": "counter",
+            "type": "u8"
+          },
+          {
+            "name": "lastActor",
+            "type": "pubkey"
           },
           {
             "name": "status",
@@ -1808,11 +1826,11 @@ export type Zuvi = {
             }
           },
           {
-            "name": "createdAt",
+            "name": "created",
             "type": "i64"
           },
           {
-            "name": "updatedAt",
+            "name": "updated",
             "type": "i64"
           },
           {
@@ -1840,31 +1858,31 @@ export type Zuvi = {
             "type": "pubkey"
           },
           {
-            "name": "monthlyRent",
+            "name": "mRent",
             "type": "u64"
           },
           {
-            "name": "depositAmount",
+            "name": "deposit",
             "type": "u64"
           },
           {
-            "name": "startDate",
+            "name": "start",
             "type": "i64"
           },
           {
-            "name": "endDate",
+            "name": "end",
             "type": "i64"
           },
           {
-            "name": "paymentDay",
+            "name": "payDay",
             "type": "u8"
           },
           {
-            "name": "contractHash",
+            "name": "cHash",
             "type": "string"
           },
           {
-            "name": "escrowAccount",
+            "name": "escrow",
             "type": "pubkey"
           },
           {
@@ -1876,11 +1894,11 @@ export type Zuvi = {
             }
           },
           {
-            "name": "paidMonths",
+            "name": "paidM",
             "type": "u16"
           },
           {
-            "name": "createdAt",
+            "name": "created",
             "type": "i64"
           },
           {

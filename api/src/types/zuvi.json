@@ -38,16 +38,16 @@
       "args": []
     },
     {
-      "name": "apply_for_rental",
+      "name": "apply_rental",
       "discriminator": [
-        61,
-        26,
-        207,
-        110,
-        237,
-        183,
-        191,
-        74
+        253,
+        118,
+        96,
+        111,
+        200,
+        52,
+        80,
+        49
       ],
       "accounts": [
         {
@@ -101,11 +101,64 @@
       ],
       "args": [
         {
-          "name": "applicant_attestation",
-          "type": "string"
+          "name": "attest_pda",
+          "type": "pubkey"
         },
         {
-          "name": "proposed_terms",
+          "name": "offer_rent",
+          "type": "u64"
+        },
+        {
+          "name": "offer_deposit",
+          "type": "u64"
+        },
+        {
+          "name": "offer_hash",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "counter_offer",
+      "discriminator": [
+        212,
+        52,
+        120,
+        221,
+        104,
+        231,
+        68,
+        97
+      ],
+      "accounts": [
+        {
+          "name": "listing"
+        },
+        {
+          "name": "application",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "clock",
+          "address": "SysvarC1ock11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_rent",
+          "type": "u64"
+        },
+        {
+          "name": "new_deposit",
+          "type": "u64"
+        },
+        {
+          "name": "new_hash",
           "type": "string"
         }
       ]
@@ -161,7 +214,7 @@
           }
         },
         {
-          "name": "escrow_account",
+          "name": "escrow",
           "writable": true,
           "pda": {
             "seeds": [
@@ -199,19 +252,19 @@
       ],
       "args": [
         {
-          "name": "start_date",
+          "name": "start",
           "type": "i64"
         },
         {
-          "name": "end_date",
+          "name": "end",
           "type": "i64"
         },
         {
-          "name": "payment_day",
+          "name": "pay_day",
           "type": "u8"
         },
         {
-          "name": "contract_hash",
+          "name": "c_hash",
           "type": "string"
         }
       ]
@@ -235,6 +288,7 @@
         },
         {
           "name": "owner",
+          "writable": true,
           "signer": true
         }
       ],
@@ -292,15 +346,15 @@
       ],
       "args": [
         {
-          "name": "listing_fee",
+          "name": "list_fee",
           "type": "u64"
         },
         {
-          "name": "contract_fee",
+          "name": "c_fee",
           "type": "u64"
         },
         {
-          "name": "payment_fee",
+          "name": "pay_fee",
           "type": "u64"
         }
       ]
@@ -357,7 +411,7 @@
               },
               {
                 "kind": "arg",
-                "path": "property_id"
+                "path": "attest_pda"
               }
             ]
           }
@@ -368,11 +422,11 @@
           "signer": true
         },
         {
-          "name": "owner_usdc_account",
+          "name": "owner_usdc",
           "writable": true
         },
         {
-          "name": "platform_usdc_account",
+          "name": "plat_usdc",
           "writable": true
         },
         {
@@ -390,38 +444,34 @@
       ],
       "args": [
         {
-          "name": "property_id",
-          "type": "string"
+          "name": "attest_pda",
+          "type": "pubkey"
         },
         {
-          "name": "owner_attestation",
-          "type": "string"
-        },
-        {
-          "name": "monthly_rent",
+          "name": "m_rent",
           "type": "u64"
         },
         {
-          "name": "deposit_months",
+          "name": "dep_months",
           "type": "u8"
         },
         {
-          "name": "property_details_hash",
+          "name": "details",
           "type": "string"
         }
       ]
     },
     {
-      "name": "pay_monthly_rent",
+      "name": "pay_rent",
       "discriminator": [
-        144,
-        48,
-        219,
-        104,
-        253,
-        102,
-        160,
-        11
+        69,
+        155,
+        112,
+        183,
+        178,
+        234,
+        94,
+        100
       ],
       "accounts": [
         {
@@ -454,15 +504,15 @@
           "signer": true
         },
         {
-          "name": "tenant_usdc_account",
+          "name": "t_usdc",
           "writable": true
         },
         {
-          "name": "landlord_usdc_account",
+          "name": "l_usdc",
           "writable": true
         },
         {
-          "name": "platform_usdc_account",
+          "name": "plat_usdc",
           "writable": true
         },
         {
@@ -488,7 +538,7 @@
               },
               {
                 "kind": "arg",
-                "path": "payment_month"
+                "path": "pay_month"
               }
             ]
           }
@@ -508,7 +558,7 @@
       ],
       "args": [
         {
-          "name": "payment_month",
+          "name": "pay_month",
           "type": "string"
         }
       ]
@@ -532,6 +582,9 @@
         {
           "name": "application",
           "writable": true
+        },
+        {
+          "name": "applicant"
         },
         {
           "name": "owner",
@@ -561,7 +614,7 @@
           "name": "contract"
         },
         {
-          "name": "dispute_record",
+          "name": "dispute",
           "writable": true,
           "pda": {
             "seeds": [
@@ -608,26 +661,26 @@
           "type": "string"
         },
         {
-          "name": "evidence_hash",
+          "name": "e_hash",
           "type": "string"
         }
       ]
     },
     {
-      "name": "respond_to_dispute",
+      "name": "respond_dispute",
       "discriminator": [
-        212,
-        2,
-        194,
-        244,
-        37,
-        73,
-        173,
-        201
+        71,
+        136,
+        87,
+        127,
+        213,
+        117,
+        241,
+        1
       ],
       "accounts": [
         {
-          "name": "dispute_record",
+          "name": "dispute",
           "writable": true
         },
         {
@@ -641,22 +694,22 @@
       ],
       "args": [
         {
-          "name": "response_evidence_hash",
+          "name": "r_hash",
           "type": "string"
         }
       ]
     },
     {
-      "name": "sign_contract_and_pay",
+      "name": "sign_contract",
       "discriminator": [
-        215,
-        129,
-        7,
-        181,
-        238,
-        118,
-        172,
-        195
+        145,
+        83,
+        234,
+        177,
+        104,
+        87,
+        183,
+        156
       ],
       "accounts": [
         {
@@ -693,15 +746,15 @@
           "signer": true
         },
         {
-          "name": "tenant_usdc_account",
+          "name": "t_usdc",
           "writable": true
         },
         {
-          "name": "landlord_usdc_account",
+          "name": "l_usdc",
           "writable": true
         },
         {
-          "name": "escrow_token_account",
+          "name": "escrow_usdc",
           "writable": true
         },
         {
@@ -727,7 +780,7 @@
           }
         },
         {
-          "name": "platform_usdc_account",
+          "name": "plat_usdc",
           "writable": true
         },
         {
@@ -803,7 +856,7 @@
           "writable": true
         },
         {
-          "name": "escrow_account",
+          "name": "escrow",
           "writable": true,
           "pda": {
             "seeds": [
@@ -831,15 +884,15 @@
           "signer": true
         },
         {
-          "name": "escrow_token_account",
+          "name": "escrow_usdc",
           "writable": true
         },
         {
-          "name": "tenant_usdc_account",
+          "name": "t_usdc",
           "writable": true
         },
         {
-          "name": "refund_payment_record",
+          "name": "refund_record",
           "writable": true,
           "pda": {
             "seeds": [
@@ -874,7 +927,7 @@
           }
         },
         {
-          "name": "escrow_authority",
+          "name": "escrow_pda",
           "pda": {
             "seeds": [
               {
@@ -953,11 +1006,11 @@
           "signer": true
         },
         {
-          "name": "platform_usdc_account",
+          "name": "plat_usdc",
           "writable": true
         },
         {
-          "name": "recipient_usdc_account",
+          "name": "recipient_usdc",
           "writable": true
         },
         {
@@ -1140,173 +1193,123 @@
   "errors": [
     {
       "code": 6000,
-      "name": "PlatformAlreadyInitialized",
-      "msg": "平台已初始化"
-    },
-    {
-      "code": 6001,
       "name": "PlatformNotInitialized",
       "msg": "平台未初始化"
     },
     {
-      "code": 6002,
+      "code": 6001,
       "name": "InvalidFeeAmount",
       "msg": "無效費用金額"
     },
     {
-      "code": 6003,
-      "name": "InvalidPropertyId",
-      "msg": "無效房產 ID"
-    },
-    {
-      "code": 6004,
+      "code": 6002,
       "name": "InvalidAttestation",
       "msg": "無效憑證"
     },
     {
-      "code": 6005,
-      "name": "PropertyAlreadyListed",
-      "msg": "房產已上架"
-    },
-    {
-      "code": 6006,
-      "name": "ListingNotFound",
-      "msg": "房源不存在"
-    },
-    {
-      "code": 6007,
+      "code": 6003,
       "name": "InvalidListingStatus",
       "msg": "房源狀態錯誤"
     },
     {
-      "code": 6008,
+      "code": 6004,
       "name": "NotPropertyOwner",
       "msg": "非房源擁有者"
     },
     {
-      "code": 6009,
-      "name": "ApplicationNotFound",
-      "msg": "申請不存在"
-    },
-    {
-      "code": 6010,
+      "code": 6005,
       "name": "InvalidApplicationStatus",
       "msg": "申請狀態錯誤"
     },
     {
-      "code": 6011,
-      "name": "NotApplicant",
-      "msg": "非申請人"
-    },
-    {
-      "code": 6012,
-      "name": "ContractNotFound",
-      "msg": "合約不存在"
-    },
-    {
-      "code": 6013,
+      "code": 6006,
       "name": "InvalidContractStatus",
       "msg": "合約狀態錯誤"
     },
     {
-      "code": 6014,
+      "code": 6007,
       "name": "NotContractParty",
       "msg": "非合約參與方"
     },
     {
-      "code": 6015,
+      "code": 6008,
       "name": "InvalidPaymentDay",
       "msg": "無效付款日"
     },
     {
-      "code": 6016,
-      "name": "InvalidContractDuration",
-      "msg": "無效租約期限"
-    },
-    {
-      "code": 6017,
+      "code": 6009,
       "name": "ContractStartDateMustBeFuture",
       "msg": "開始日期須為未來"
     },
     {
-      "code": 6018,
+      "code": 6010,
       "name": "ContractEndDateMustBeAfterStart",
       "msg": "結束日期須晚於開始"
     },
     {
-      "code": 6019,
+      "code": 6011,
       "name": "DepositMustBeGreaterThanZero",
       "msg": "押金須大於零"
     },
     {
-      "code": 6020,
+      "code": 6012,
       "name": "RentMustBeGreaterThanZero",
       "msg": "月租須大於零"
     },
     {
-      "code": 6021,
-      "name": "IncorrectPaymentAmount",
-      "msg": "支付金額錯誤"
-    },
-    {
-      "code": 6022,
-      "name": "RentAlreadyPaidForMonth",
-      "msg": "本月已付租金"
-    },
-    {
-      "code": 6023,
+      "code": 6013,
       "name": "ContractNotStarted",
       "msg": "合約未開始"
     },
     {
-      "code": 6024,
+      "code": 6014,
       "name": "ContractEnded",
       "msg": "合約已結束"
     },
     {
-      "code": 6025,
+      "code": 6015,
       "name": "DepositAlreadyRefunded",
       "msg": "押金已退還"
     },
     {
-      "code": 6026,
-      "name": "UnpaidRentExists",
-      "msg": "有未付租金"
-    },
-    {
-      "code": 6027,
+      "code": 6016,
       "name": "Unauthorized",
       "msg": "無權限"
     },
     {
-      "code": 6028,
+      "code": 6017,
       "name": "InsufficientBalance",
       "msg": "餘額不足"
     },
     {
-      "code": 6029,
+      "code": 6018,
       "name": "InvalidWithdrawAmount",
       "msg": "無效提取金額"
     },
     {
-      "code": 6030,
+      "code": 6019,
       "name": "StringTooLong",
       "msg": "字串過長"
     },
     {
-      "code": 6031,
+      "code": 6020,
       "name": "InvalidDisputeStatus",
       "msg": "爭議狀態錯誤"
     },
     {
-      "code": 6032,
-      "name": "DisputeAlreadyExists",
-      "msg": "爭議已存在"
+      "code": 6021,
+      "name": "InvalidCounterOffer",
+      "msg": "無效還價"
     },
     {
-      "code": 6033,
-      "name": "DisputeNotFound",
-      "msg": "爭議不存在"
+      "code": 6022,
+      "name": "TooManyCounters",
+      "msg": "協商次數過多"
+    },
+    {
+      "code": 6023,
+      "name": "MustAcceptApplicantOffer",
+      "msg": "須接受申請人提案"
     }
   ],
   "types": [
@@ -1319,13 +1322,16 @@
             "name": "Pending"
           },
           {
+            "name": "Negotiating"
+          },
+          {
             "name": "Accepted"
           },
           {
             "name": "Rejected"
           },
           {
-            "name": "Cancelled"
+            "name": "Expired"
           }
         ]
       }
@@ -1392,7 +1398,7 @@
             "type": "pubkey"
           },
           {
-            "name": "initiated_by",
+            "name": "initiator",
             "type": "pubkey"
           },
           {
@@ -1412,7 +1418,7 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "dispute_id",
+            "name": "id",
             "type": "pubkey"
           },
           {
@@ -1420,7 +1426,7 @@
             "type": "pubkey"
           },
           {
-            "name": "initiated_by",
+            "name": "initiator",
             "type": "pubkey"
           },
           {
@@ -1432,7 +1438,7 @@
             "type": "string"
           },
           {
-            "name": "evidence_hash",
+            "name": "e_hash",
             "type": "string"
           },
           {
@@ -1444,15 +1450,15 @@
             }
           },
           {
-            "name": "created_at",
+            "name": "created",
             "type": "i64"
           },
           {
-            "name": "updated_at",
+            "name": "updated",
             "type": "i64"
           },
           {
-            "name": "resolution_notes",
+            "name": "notes",
             "type": {
               "option": "string"
             }
@@ -1518,11 +1524,11 @@
             "type": "pubkey"
           },
           {
-            "name": "deposit_amount",
+            "name": "deposit",
             "type": "u64"
           },
           {
-            "name": "deposit_refunded",
+            "name": "refunded",
             "type": "bool"
           },
           {
@@ -1571,7 +1577,7 @@
             "type": "u64"
           },
           {
-            "name": "payment_type",
+            "name": "pay_type",
             "type": {
               "defined": {
                 "name": "PaymentType"
@@ -1579,13 +1585,13 @@
             }
           },
           {
-            "name": "payment_month",
+            "name": "pay_month",
             "type": {
               "option": "string"
             }
           },
           {
-            "name": "timestamp",
+            "name": "tx_time",
             "type": "i64"
           },
           {
@@ -1636,15 +1642,15 @@
             "type": "pubkey"
           },
           {
-            "name": "listing_fee",
+            "name": "list_fee",
             "type": "u64"
           },
           {
-            "name": "contract_fee",
+            "name": "c_fee",
             "type": "u64"
           },
           {
-            "name": "payment_fee",
+            "name": "pay_fee",
             "type": "u64"
           },
           {
@@ -1652,7 +1658,7 @@
             "type": "bool"
           },
           {
-            "name": "total_fees_collected",
+            "name": "total_fees",
             "type": "u64"
           },
           {
@@ -1680,7 +1686,7 @@
             "type": "string"
           },
           {
-            "name": "monthly_rent",
+            "name": "m_rent",
             "type": "u64"
           },
           {
@@ -1700,27 +1706,23 @@
             "type": "pubkey"
           },
           {
-            "name": "property_id",
-            "type": "string"
+            "name": "attest_pda",
+            "type": "pubkey"
           },
           {
-            "name": "owner_attestation",
-            "type": "string"
-          },
-          {
-            "name": "monthly_rent",
+            "name": "m_rent",
             "type": "u64"
           },
           {
-            "name": "deposit_months",
+            "name": "dep_months",
             "type": "u8"
           },
           {
-            "name": "property_details_hash",
+            "name": "details",
             "type": "string"
           },
           {
-            "name": "current_contract",
+            "name": "cur_contract",
             "type": {
               "option": "pubkey"
             }
@@ -1734,7 +1736,7 @@
             }
           },
           {
-            "name": "created_at",
+            "name": "created",
             "type": "i64"
           },
           {
@@ -1762,7 +1764,7 @@
             "type": "u64"
           },
           {
-            "name": "payment_month",
+            "name": "pay_month",
             "type": "string"
           },
           {
@@ -1786,12 +1788,28 @@
             "type": "pubkey"
           },
           {
-            "name": "applicant_attestation",
+            "name": "attest_pda",
+            "type": "pubkey"
+          },
+          {
+            "name": "offer_rent",
+            "type": "u64"
+          },
+          {
+            "name": "offer_deposit",
+            "type": "u64"
+          },
+          {
+            "name": "offer_hash",
             "type": "string"
           },
           {
-            "name": "proposed_terms",
-            "type": "string"
+            "name": "counter",
+            "type": "u8"
+          },
+          {
+            "name": "last_actor",
+            "type": "pubkey"
           },
           {
             "name": "status",
@@ -1802,11 +1820,11 @@
             }
           },
           {
-            "name": "created_at",
+            "name": "created",
             "type": "i64"
           },
           {
-            "name": "updated_at",
+            "name": "updated",
             "type": "i64"
           },
           {
@@ -1834,31 +1852,31 @@
             "type": "pubkey"
           },
           {
-            "name": "monthly_rent",
+            "name": "m_rent",
             "type": "u64"
           },
           {
-            "name": "deposit_amount",
+            "name": "deposit",
             "type": "u64"
           },
           {
-            "name": "start_date",
+            "name": "start",
             "type": "i64"
           },
           {
-            "name": "end_date",
+            "name": "end",
             "type": "i64"
           },
           {
-            "name": "payment_day",
+            "name": "pay_day",
             "type": "u8"
           },
           {
-            "name": "contract_hash",
+            "name": "c_hash",
             "type": "string"
           },
           {
-            "name": "escrow_account",
+            "name": "escrow",
             "type": "pubkey"
           },
           {
@@ -1870,11 +1888,11 @@
             }
           },
           {
-            "name": "paid_months",
+            "name": "paid_m",
             "type": "u16"
           },
           {
-            "name": "created_at",
+            "name": "created",
             "type": "i64"
           },
           {

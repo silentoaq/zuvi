@@ -23,15 +23,14 @@ pub fn create(
     require!(end > start, ZuviError::ContractEndDateMustBeAfterStart);
     require!(c_hash.len() <= 64, ZuviError::StringTooLong);
 
-    let deposit = listing.m_rent
-        .checked_mul(listing.dep_months as u64)
-        .ok_or(ProgramError::ArithmeticOverflow)?;
+    // 使用協商後的押金金額
+    let deposit = application.offer_deposit;
 
     contract.listing = listing.key();
     contract.landlord = listing.owner;
     contract.tenant = application.applicant;
-    contract.m_rent = application.offer_rent;      // 使用協商後的租金
-    contract.deposit = application.offer_deposit;   // 使用協商後的押金
+    contract.m_rent = application.offer_rent;      
+    contract.deposit = deposit;   // 統一使用協商後的押金
     contract.start = start;
     contract.end = end;
     contract.pay_day = pay_day;
@@ -48,7 +47,7 @@ pub fn create(
     contract.bump = contract_bump;
 
     escrow.contract = contract.key();
-    escrow.deposit = deposit;
+    escrow.deposit = deposit;  // 統一使用協商後的押金
     escrow.refunded = false;
     
     let (_, escrow_bump) = Pubkey::find_program_address(
@@ -149,9 +148,9 @@ pub fn terminate(ctx: Context<TerminateContract>, reason: String) -> Result<()> 
 
     require!(reason.len() <= 256, ZuviError::StringTooLong);
 
-    // 退還押金
+    // 退還押金 - 使用 contract.deposit 而不是 escrow.deposit
     let contract_key = contract.key();
-    let escrow_bump = ctx.bumps.escrow_pda;  // 使用 context 中的 bump
+    let escrow_bump = ctx.bumps.escrow_pda;
     let seeds = &[
         b"escrow".as_ref(),
         contract_key.as_ref(),
@@ -169,7 +168,7 @@ pub fn terminate(ctx: Context<TerminateContract>, reason: String) -> Result<()> 
             },
             signer
         ),
-        ctx.accounts.escrow.deposit
+        contract.deposit  // 使用 contract.deposit 確保金額一致
     )?;
 
     // 更新房源狀態
@@ -181,7 +180,7 @@ pub fn terminate(ctx: Context<TerminateContract>, reason: String) -> Result<()> 
     refund_record.contract = contract.key();
     refund_record.payer = ctx.accounts.escrow_pda.key();
     refund_record.recipient = contract.tenant;
-    refund_record.amount = ctx.accounts.escrow.deposit;
+    refund_record.amount = contract.deposit;  // 使用 contract.deposit
     refund_record.pay_type = PaymentType::DepositRefund;
     refund_record.pay_month = None;
     refund_record.tx_time = clock.unix_timestamp;

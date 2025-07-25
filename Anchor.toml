@@ -6,16 +6,16 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-zuvi = "6gm4qAkiwmX7ticJdv25K3vB5etd8rsbDMJ24xTu9jN"
+zuvi = "6ptqmN5bGJnx5ahuJaUV3kNKz2JhNgguuzHx7yvEGdfL"
 
 [programs.devnet]
-zuvi = "6gm4qAkiwmX7ticJdv25K3vB5etd8rsbDMJ24xTu9jN"
+zuvi = "6ptqmN5bGJnx5ahuJaUV3kNKz2JhNgguuzHx7yvEGdfL"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

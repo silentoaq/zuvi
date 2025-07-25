@@ -8,7 +8,7 @@ mod processor;
 
 use context::*;
 
-declare_id!("6gm4qAkiwmX7ticJdv25K3vB5etd8rsbDMJ24xTu9jN");
+declare_id!("6ptqmN5bGJnx5ahuJaUV3kNKz2JhNgguuzHx7yvEGdfL");
 
 #[program]
 pub mod zuvi {

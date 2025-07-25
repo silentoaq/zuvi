@@ -6,7 +6,7 @@ pub struct PropertyListed {
     pub listing: Pubkey,
     pub owner: Pubkey,
     pub property_id: String,
-    pub monthly_rent: u64,
+    pub m_rent: u64,
     pub timestamp: i64,
 }
 
@@ -24,7 +24,7 @@ pub struct RentPaid {
     pub contract: Pubkey,
     pub tenant: Pubkey,
     pub amount: u64,
-    pub payment_month: String,
+    pub pay_month: String,
     pub timestamp: i64,
 }
 
@@ -32,7 +32,7 @@ pub struct RentPaid {
 pub struct DisputeRaised {
     pub dispute_id: Pubkey,
     pub contract: Pubkey,
-    pub initiated_by: Pubkey,
+    pub initiator: Pubkey,
     pub reason: String,
     pub timestamp: i64,
 }

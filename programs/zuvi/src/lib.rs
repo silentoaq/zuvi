@@ -3,11 +3,12 @@ use anchor_lang::prelude::*;
 mod state;
 mod errors;
 mod events;
-mod instructions;
+mod context;
+mod processor;
 
-use instructions::*;
+use context::*;
 
-declare_id!("2h2Gw1oK7zNHed7GBXFShqvJGzBaVkPEMB7EDRUcVdct");
+declare_id!("6gm4qAkiwmX7ticJdv25K3vB5etd8rsbDMJ24xTu9jN");
 
 #[program]
 pub mod zuvi {
@@ -16,94 +17,97 @@ pub mod zuvi {
     // 平台管理
     pub fn initialize_platform(
         ctx: Context<InitializePlatform>,
-        listing_fee: u64,
-        contract_fee: u64,
-        payment_fee: u64,
+        list_fee: u64,
+        c_fee: u64,
+        pay_fee: u64,
     ) -> Result<()> {
-        instructions::platform::initialize(ctx, listing_fee, contract_fee, payment_fee)
+        processor::platform::initialize(ctx, list_fee, c_fee, pay_fee)
     }
 
     pub fn withdraw_fees(ctx: Context<WithdrawFees>, amount: u64) -> Result<()> {
-        instructions::platform::withdraw_fees(ctx, amount)
+        processor::platform::withdraw_fees(ctx, amount)
     }
 
     // 房源管理
     pub fn list_property(
         ctx: Context<ListProperty>,
-        property_id: String,
-        owner_attestation: String,
-        monthly_rent: u64,
-        deposit_months: u8,
-        property_details_hash: String,
+        attest_pda: Pubkey,
+        m_rent: u64,
+        dep_months: u8,
+        details: String,
     ) -> Result<()> {
-        instructions::property::list(
-            ctx,
-            property_id,
-            owner_attestation,
-            monthly_rent,
-            deposit_months,
-            property_details_hash,
-        )
+        processor::property::list(ctx, attest_pda, m_rent, dep_months, details)
     }
 
     pub fn delist_property(ctx: Context<DelistProperty>) -> Result<()> {
-        instructions::property::delist(ctx)
+        processor::property::delist(ctx)
     }
 
     // 申請管理
-    pub fn apply_for_rental(
-        ctx: Context<ApplyForRental>,
-        applicant_attestation: String,
-        proposed_terms: String,
+    pub fn apply_rental(
+        ctx: Context<ApplyRental>,
+        attest_pda: Pubkey,
+        offer_rent: u64,
+        offer_deposit: u64,
+        offer_hash: String,
     ) -> Result<()> {
-        instructions::application::apply(ctx, applicant_attestation, proposed_terms)
+        processor::application::apply(ctx, attest_pda, offer_rent, offer_deposit, offer_hash)
+    }
+
+    pub fn counter_offer(
+        ctx: Context<CounterOffer>,
+        new_rent: u64,
+        new_deposit: u64,
+        new_hash: String,
+    ) -> Result<()> {
+        processor::application::counter(ctx, new_rent, new_deposit, new_hash)
     }
 
     pub fn accept_application(ctx: Context<AcceptApplication>) -> Result<()> {
-        instructions::application::accept(ctx)
+        processor::application::accept(ctx)
     }
 
     pub fn reject_application(ctx: Context<RejectApplication>) -> Result<()> {
-        instructions::application::reject(ctx)
+        processor::application::reject(ctx)
     }
 
     // 合約管理
     pub fn create_contract(
         ctx: Context<CreateContract>,
-        start_date: i64,
-        end_date: i64,
-        payment_day: u8,
-        contract_hash: String,
+        start: i64,
+        end: i64,
+        pay_day: u8,
+        c_hash: String,
     ) -> Result<()> {
-        instructions::contract::create(ctx, start_date, end_date, payment_day, contract_hash)
+        processor::contract::create(ctx, start, end, pay_day, c_hash)
     }
 
-    pub fn sign_contract_and_pay(ctx: Context<SignContractAndPay>) -> Result<()> {
-        instructions::contract::sign_and_pay(ctx)
+    pub fn sign_contract(ctx: Context<SignContract>) -> Result<()> {
+        processor::contract::sign_contract(ctx)
     }
 
     pub fn terminate_contract(ctx: Context<TerminateContract>, reason: String) -> Result<()> {
-        instructions::contract::terminate(ctx, reason)
+        processor::contract::terminate(ctx, reason)
     }
 
     // 支付管理
-    pub fn pay_monthly_rent(ctx: Context<PayMonthlyRent>, payment_month: String) -> Result<()> {
-        instructions::payment::pay_rent(ctx, payment_month)
+    pub fn pay_rent(ctx: Context<PayRent>, pay_month: String) -> Result<()> {
+        processor::payment::pay_rent(ctx, pay_month)
     }
 
     // 爭議管理
     pub fn report_dispute(
         ctx: Context<ReportDispute>,
         reason: String,
-        evidence_hash: String,
+        e_hash: String,
     ) -> Result<()> {
-        instructions::dispute::report(ctx, reason, evidence_hash)
+        processor::dispute::report(ctx, reason, e_hash)
     }
 
-    pub fn respond_to_dispute(
-        ctx: Context<RespondToDispute>,
-        response_evidence_hash: String,
+    pub fn respond_dispute(
+        ctx: Context<RespondDispute>,
+        r_hash: String,
     ) -> Result<()> {
-        instructions::dispute::respond(ctx, response_evidence_hash)
+        processor::dispute::respond(ctx, r_hash)
     }
 }

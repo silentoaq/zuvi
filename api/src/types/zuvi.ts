@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/zuvi.json`.
  */
 export type Zuvi = {
-  "address": "6gm4qAkiwmX7ticJdv25K3vB5etd8rsbDMJ24xTu9jN",
+  "address": "6ptqmN5bGJnx5ahuJaUV3kNKz2JhNgguuzHx7yvEGdfL",
   "metadata": {
     "name": "zuvi",
     "version": "0.1.0",

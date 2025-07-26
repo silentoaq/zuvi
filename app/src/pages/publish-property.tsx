@@ -270,16 +270,22 @@ export function PublishPropertyPage() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          selectedCredentialId,
-          ownerAttestation: selectedAttestation.address,
-          monthlyRent: parseInt(formData.monthlyRent),
+          attestPda: selectedAttestation.address,
+          ownerAttestation: attestation?.attestations?.twfido?.address,
+          monthlyRent: parseInt(formData.monthlyRent) * 1_000_000,
           depositMonths: parseInt(formData.depositMonths),
           propertyDetailsHash
         })
       });
 
-      if (!prepareRes.ok) throw new Error('Failed to prepare transaction');
+      if (!prepareRes.ok) {
+        const error = await prepareRes.json();
+        console.error('Prepare error:', error);
+        throw new Error(error.error || 'Failed to prepare transaction');
+      }
+      
       const prepareData = await prepareRes.json();
+      console.log('Prepare response:', prepareData);
 
       setPendingTransaction({
         txBase64: prepareData.transaction,
@@ -290,7 +296,8 @@ export function PublishPropertyPage() {
       
     } catch (error) {
       console.error("Submit error:", error);
-      toast.error("房源發布失敗");
+      toast.error(`房源發布失敗: ${error instanceof Error ? error.message : '未知錯誤'}`);
+    } finally {
       setSubmitting(false);
     }
   };
@@ -298,16 +305,26 @@ export function PublishPropertyPage() {
   const handleConfirmTransaction = async () => {
     if (!pendingTransaction || !wallet) return;
 
+    setSubmitting(true);
+    
     try {
-      const connection = new Connection(`https://${process.env.REACT_APP_RPC_ROOT || 'api.devnet.solana.com'}`);
+      console.log('Starting transaction confirmation...');
+      const connection = new Connection(`https://${import.meta.env.VITE_RPC_ROOT || 'api.devnet.solana.com'}`);
       const transaction = Transaction.from(Buffer.from(pendingTransaction.txBase64, 'base64'));
+      
+      console.log('Signing transaction...');
       const signedTransaction = await wallet.signTransaction(transaction);
+      
+      console.log('Sending transaction...');
       const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+      console.log('Transaction signature:', signature);
       
       toast.success("交易已發送，等待確認...");
       setShowFeeDialog(false);
 
       const token = await createAuthToken();
+      console.log('Confirming transaction on backend...');
+      
       const confirmRes = await fetch('/api/listing/confirm', {
         method: 'POST',
         headers: {
@@ -321,14 +338,18 @@ export function PublishPropertyPage() {
         })
       });
 
-      if (!confirmRes.ok) throw new Error('Transaction confirmation failed');
+      if (!confirmRes.ok) {
+        const error = await confirmRes.json();
+        console.error('Confirmation error:', error);
+        throw new Error(error.error || 'Transaction confirmation failed');
+      }
       
       toast.success("房源發布成功！");
       navigate('/dashboard');
       
     } catch (error) {
       console.error("Transaction error:", error);
-      toast.error("交易失敗");
+      toast.error(`交易失敗: ${error instanceof Error ? error.message : '未知錯誤'}`);
     } finally {
       setSubmitting(false);
       setPendingTransaction(null);
@@ -506,7 +527,7 @@ export function PublishPropertyPage() {
                   <p className="text-xs text-muted-foreground">租客可議價</p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="depositMonths">押金（月數）</Label>
+                  <Label htmlFor="depositMonths">押金（月份數）</Label>
                   <Select 
                     value={formData.depositMonths} 
                     onValueChange={(value) => setFormData(prev => ({ ...prev, depositMonths: value }))}
@@ -523,22 +544,22 @@ export function PublishPropertyPage() {
                 </div>
               </div>
 
-              {/* 房源描述 */}
+              {/* 描述 */}
               <div className="space-y-2">
                 <Label htmlFor="description">房源描述</Label>
                 <Textarea
                   id="description"
+                  placeholder="描述房間特色、周邊環境、交通便利性等..."
                   value={formData.description}
                   onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="請描述房源特色、格局、周邊環境等資訊..."
-                  rows={4}
+                  className="min-h-[120px]"
                   required
                 />
               </div>
 
-              {/* 設備設施 */}
+              {/* 設備提供 */}
               <div className="space-y-3">
-                <Label>設備設施</Label>
+                <Label>提供設備</Label>
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { key: 'hasAirConditioner', label: '冷氣' },
@@ -546,7 +567,7 @@ export function PublishPropertyPage() {
                     { key: 'hasRefrigerator', label: '冰箱' },
                     { key: 'hasWaterHeater', label: '熱水器' },
                     { key: 'hasInternet', label: '網路' },
-                    { key: 'hasFurniture', label: '基本家具' },
+                    { key: 'hasFurniture', label: '傢俱' },
                   ].map(({ key, label }) => (
                     <div key={key} className="flex items-center space-x-2">
                       <Checkbox
@@ -631,43 +652,48 @@ export function PublishPropertyPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>確認發布費用</AlertDialogTitle>
-            <AlertDialogDescription className="space-y-4">
-              <div className="text-sm space-y-2">
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-muted-foreground">平台費用</span>
-                  <span className="font-medium">
-                    {pendingTransaction ? (pendingTransaction.fees.listingFeeUsdc / 1_000_000).toFixed(2) : '0'} USDC
-                  </span>
-                </div>
-                <div className="flex justify-between py-2 border-b">
-                  <span className="text-muted-foreground">區塊鏈手續費</span>
-                  <span className="font-medium">
-                    {pendingTransaction ? (pendingTransaction.fees.solCostUsdc / 1_000_000).toFixed(2) : '0'} USDC
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-1">
-                  <span className="text-xs text-muted-foreground">
-                    SOL 價格：${pendingTransaction?.fees.solPrice.toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between py-2 font-semibold text-base">
-                  <span>總計</span>
-                  <span className="text-primary">
-                    {pendingTransaction ? (pendingTransaction.fees.totalUsdc / 1_000_000).toFixed(2) : '0'} USDC
-                  </span>
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                確認支付上述費用並發布房源？
-              </p>
+            <AlertDialogDescription>
+              發布房源需要支付平台費用及網路手續費
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-4 my-4">
+            <div className="text-sm space-y-2">
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-muted-foreground">平台費用</span>
+                <span className="font-medium">
+                  {pendingTransaction ? `${pendingTransaction.fees.listingFeeUsdc.toFixed(2)} USDC` : '---'}
+                </span>
+              </div>
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-muted-foreground">網路手續費（預估）</span>
+                <span className="font-medium">
+                  {pendingTransaction ? `${pendingTransaction.fees.solCostUsdc.toFixed(2)} USDC` : '---'}
+                </span>
+              </div>
+              <div className="flex justify-between py-2 font-semibold">
+                <span>總計</span>
+                <span>
+                  {pendingTransaction ? `${pendingTransaction.fees.totalUsdc.toFixed(2)} USDC` : '---'}
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              當前 SOL 價格：${pendingTransaction?.fees.solPrice.toFixed(2) || '---'} USD
+            </p>
+          </div>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleCancelTransaction}>
+            <AlertDialogCancel onClick={handleCancelTransaction} disabled={submitting}>
               取消
             </AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmTransaction}>
-              確認支付
+            <AlertDialogAction onClick={handleConfirmTransaction} disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  確認中...
+                </>
+              ) : (
+                '確認並簽名'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

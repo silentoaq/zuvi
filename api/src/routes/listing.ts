@@ -8,7 +8,7 @@ import {
   LAMPORTS_PER_SOL,
   ComputeBudgetProgram
 } from '@solana/web3.js';
-import { Program, AnchorProvider, Idl } from '@coral-xyz/anchor';
+import { Program, AnchorProvider, Idl, web3 } from '@coral-xyz/anchor';
 import BN from 'bn.js';
 import { 
   TOKEN_PROGRAM_ID, 
@@ -47,14 +47,22 @@ try {
 router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, res) => {
   try {
     const {
-      selectedCredentialId,
+      attestPda,  // 接收 attestPda
       ownerAttestation,
       monthlyRent,
       depositMonths,
       propertyDetailsHash
     } = req.body;
 
-    if (!selectedCredentialId || !ownerAttestation || !monthlyRent || !depositMonths || !propertyDetailsHash) {
+    logger.info('Listing prepare request:', {
+      attestPda,
+      ownerAttestation,
+      monthlyRent,
+      depositMonths,
+      propertyDetailsHash: propertyDetailsHash?.substring(0, 10) + '...'
+    });
+
+    if (!attestPda || !ownerAttestation || !monthlyRent || !depositMonths || !propertyDetailsHash) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -71,68 +79,62 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
     
     const owner = new PublicKey(req.wallet!.address);
     const usdcMint = new PublicKey(process.env.USDC_MINT!);
+    const attestPdaPubkey = new PublicKey(attestPda);  // 轉換為 PublicKey
     
+    // 正確計算 listing PDA
+    const [listingPda] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from('listing'),
+        attestPdaPubkey.toBuffer()  // 使用 attestPda 的 buffer
+      ],
+      programId
+    );
+
     const [platformPda] = PublicKey.findProgramAddressSync(
       [Buffer.from('platform')],
       programId
     );
-    
-    const [listingPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from('listing'), Buffer.from(selectedCredentialId)],
-      programId
-    );
-    
+
     const platform = await program.account.platform.fetch(platformPda);
     
-    const ownerUsdcAccount = await getAssociatedTokenAddress(
-      usdcMint,
-      owner
-    );
+    // 檢查手續費
+    const listingFee = new BN(platform.listFee.toString());
     
-    const platformUsdcAccount = await getAssociatedTokenAddress(
+    // 取得相關 token 帳戶
+    const ownerUsdc = await getAssociatedTokenAddress(
       usdcMint,
-      platformPda,
-      true
+      owner,
+      false,
+      TOKEN_PROGRAM_ID
     );
-    
+
+    const platUsdc = await getAssociatedTokenAddress(
+      usdcMint,
+      platform.feeReceiver,
+      false,
+      TOKEN_PROGRAM_ID
+    );
+
+    // 準備交易
     const transaction = new Transaction();
     
-    let totalSolCost = 0;
-    
-    const ownerUsdcAccountInfo = await connection.getAccountInfo(ownerUsdcAccount);
-    if (!ownerUsdcAccountInfo) {
-      const rentExemptBalance = await connection.getMinimumBalanceForRentExemption(165);
-      totalSolCost += rentExemptBalance / LAMPORTS_PER_SOL;
-      
-      const createOwnerATAIx = createAssociatedTokenAccountInstruction(
-        feePayerKeypair.publicKey,
-        ownerUsdcAccount,
-        owner,
-        usdcMint
-      );
-      transaction.add(createOwnerATAIx);
-    }
-    
-    const listingAccountInfo = await connection.getAccountInfo(listingPda);
-    if (!listingAccountInfo) {
-      const LISTING_SIZE = 8 + 32 + 32 + 8 + 1 + 32 + 32 + 1 + 8 + 1 + 200;
-      const rentExemptBalance = await connection.getMinimumBalanceForRentExemption(LISTING_SIZE);
-      totalSolCost += rentExemptBalance / LAMPORTS_PER_SOL;
-    }
-    
-    const transferInstruction = createTransferInstruction(
-      ownerUsdcAccount,
-      platformUsdcAccount,
-      owner,
-      0
+    // 設定計算預算
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitLimit({
+        units: 300_000
+      })
     );
-    transaction.add(transferInstruction);
     
-    const attestPda = new PublicKey(ownerAttestation);
-    
-    const listInstruction = await program.methods
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: 1000
+      })
+    );
+
+    // 建立 listing 指令
+    const listPropertyIx = await program.methods
       .listProperty(
-        attestPda,
+        attestPdaPubkey,  // 傳入 attestPda
         new BN(monthlyRent),
         depositMonths,
         propertyDetailsHash
@@ -140,122 +142,81 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
       .accountsPartial({
         platform: platformPda,
         listing: listingPda,
-        owner,
-        ownerUsdc: ownerUsdcAccount,
-        platUsdc: platformUsdcAccount,
+        owner: owner,
+        ownerUsdc: ownerUsdc,
+        platUsdc: platUsdc,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
-        clock: PublicKey.default
+        clock: web3.SYSVAR_CLOCK_PUBKEY
       })
       .instruction();
-      
-    transaction.add(listInstruction);
-    
-    const testTransaction = new Transaction();
-    testTransaction.add(...transaction.instructions);
-    testTransaction.feePayer = feePayerKeypair.publicKey;
-    testTransaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-    
-    const simulationResult = await connection.simulateTransaction(testTransaction);
-    
-    if (simulationResult.value.err) {
-      logger.error('Transaction simulation error:', simulationResult.value.err);
-      throw new Error('Transaction simulation failed');
-    }
-    
-    const actualComputeUnits = simulationResult.value.unitsConsumed || 200000;
-    const safetyMargin = 1.2;
-    const finalComputeUnits = Math.ceil(actualComputeUnits * safetyMargin);
-    
-    const computeUnitPrice = 5000;
-    const priorityFee = Math.ceil((finalComputeUnits * computeUnitPrice) / 1_000_000);
-    const baseTransactionFee = 5000;
-    totalSolCost += (baseTransactionFee + priorityFee) / LAMPORTS_PER_SOL;
-    
-    const solPrice = await getSolPrice();
-    const totalSolCostInUsdc = Math.ceil(totalSolCost * solPrice * 1_000_000);
-    
-    const listingFee = platform.listFee.toNumber();
-    const totalUsdcCost = listingFee + totalSolCostInUsdc;
-    
-    const finalTransaction = new Transaction();
-    
-    finalTransaction.add(
-      ComputeBudgetProgram.setComputeUnitLimit({
-        units: finalComputeUnits
-      }),
-      ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: computeUnitPrice
-      })
-    );
-    
-    for (const ix of transaction.instructions) {
-      if (ix.programId.equals(TOKEN_PROGRAM_ID) && ix.data[0] === 3) {
-        const transferIx = createTransferInstruction(
-          ownerUsdcAccount,
-          platformUsdcAccount,
-          owner,
-          totalUsdcCost
-        );
-        finalTransaction.add(transferIx);
-      } else {
-        finalTransaction.add(ix);
-      }
-    }
-    
-    finalTransaction.feePayer = feePayerKeypair.publicKey;
-    
+
+    transaction.add(listPropertyIx);
+
+    // 取得最新 blockhash
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-    finalTransaction.recentBlockhash = blockhash;
-    
-    finalTransaction.partialSign(feePayerKeypair);
-    
-    const serializedTransaction = finalTransaction.serialize({
+    transaction.recentBlockhash = blockhash;
+    transaction.feePayer = feePayerKeypair.publicKey;
+
+    // 部分簽名
+    transaction.partialSign(feePayerKeypair);
+
+    // 序列化交易
+    const serializedTransaction = transaction.serialize({
       requireAllSignatures: false,
       verifySignatures: false
     });
-    
-    logger.info('Transaction prepared', {
-      computeUnits: finalComputeUnits,
-      totalSolCost,
-      totalUsdcCost: totalUsdcCost / 1_000_000
-    });
-    
+
+    const txBase64 = serializedTransaction.toString('base64');
+
+    // 取得 SOL 價格來計算手續費
+    const solPrice = await getSolPrice();
+    const solCostUsdc = 0.015 * solPrice;
+
     res.json({
-      transaction: serializedTransaction.toString('base64'),
-      listingPda: listingPda.toString(),
-      fees: {
-        listingFeeUsdc: listingFee,
-        solCostUsdc: totalSolCostInUsdc,
-        totalUsdc: totalUsdcCost,
-        solPrice: solPrice,
-        computeUnits: finalComputeUnits
+      success: true,
+      transaction: {
+        txBase64,
+        listingPda: listingPda.toString()
       },
-      lastValidBlockHeight
+      fees: {
+        listingFeeUsdc: parseInt(listingFee.toString()) / 1_000_000,
+        solCostUsdc,
+        totalUsdc: (parseInt(listingFee.toString()) / 1_000_000) + solCostUsdc,
+        solPrice
+      }
     });
-    
+
   } catch (error) {
     logger.error('Failed to prepare listing transaction:', error);
     res.status(500).json({ error: 'Failed to prepare transaction' });
   }
 });
 
-router.post('/confirm', verifyWallet, async (req: AuthRequest, res) => {
+router.post('/confirm', verifyWallet, requireProperty, async (req: AuthRequest, res) => {
   try {
-    const { signature, listingPda, propertyId } = req.body;
-    
-    if (!signature || !listingPda || !propertyId) {
+    const { propertyId, txSignature, listingPda } = req.body;
+
+    if (!propertyId || !txSignature || !listingPda) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    
+
     const connection = new Connection(`https://${process.env.RPC_ROOT}`);
     
-    const result = await connection.confirmTransaction(signature, 'confirmed');
+    logger.info('Confirming transaction:', { txSignature });
     
-    if (result.value.err) {
+    // 等待交易確認
+    const confirmation = await connection.confirmTransaction({
+      signature: txSignature,
+      blockhash: (await connection.getLatestBlockhash()).blockhash,
+      lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight
+    }, 'confirmed');
+
+    if (confirmation.value.err) {
       throw new Error('Transaction failed');
     }
-    
+
+    // 取得 listing 資料
     const programId = new PublicKey(process.env.ZUVI_PROGRAM_ID!);
     const provider = new AnchorProvider(
       connection,

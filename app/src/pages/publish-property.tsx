@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2, Building, Copy, Check } from "lucide-react";
-import { Transaction, Connection } from "@solana/web3.js";
+import { Transaction } from "@solana/web3.js";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -308,41 +308,49 @@ export function PublishPropertyPage() {
     setSubmitting(true);
     
     try {
-      console.log('Starting transaction confirmation...');
-      const connection = new Connection(`https://${import.meta.env.VITE_RPC_ROOT || 'api.devnet.solana.com'}`);
+      console.log('Starting transaction signing...');
       const transaction = Transaction.from(Buffer.from(pendingTransaction.txBase64, 'base64'));
       
-      console.log('Signing transaction...');
+      console.log('Transaction info:', {
+        feePayer: transaction.feePayer?.toString(),
+        signatures: transaction.signatures.length
+      });
+      
+      console.log('Signing transaction (only for USDC transfer)...');
       const signedTransaction = await wallet.signTransaction(transaction);
       
-      console.log('Sending transaction...');
-      const signature = await connection.sendRawTransaction(signedTransaction.serialize());
-      console.log('Transaction signature:', signature);
-      
-      toast.success("交易已發送，等待確認...");
+      const signedTxBase64 = signedTransaction.serialize({
+        requireAllSignatures: false,
+        verifySignatures: false
+      }).toString('base64');
+
+      toast.success("簽名完成，提交交易中...");
       setShowFeeDialog(false);
 
       const token = await createAuthToken();
-      console.log('Confirming transaction on backend...');
+      console.log('Sending signed transaction to backend...');
       
-      const confirmRes = await fetch('/api/listing/confirm', {
+      const executeRes = await fetch('/api/listing/execute', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          signature,
+          signedTransaction: signedTxBase64,
           listingPda: pendingTransaction.listingPda,
           propertyId: selectedCredentialId
         })
       });
 
-      if (!confirmRes.ok) {
-        const error = await confirmRes.json();
-        console.error('Confirmation error:', error);
-        throw new Error(error.error || 'Transaction confirmation failed');
+      if (!executeRes.ok) {
+        const error = await executeRes.json();
+        console.error('Execution error:', error);
+        throw new Error(error.error || 'Transaction execution failed');
       }
+      
+      const result = await executeRes.json();
+      console.log('Transaction signature:', result.signature);
       
       toast.success("房源發布成功！");
       navigate('/dashboard');
@@ -527,7 +535,7 @@ export function PublishPropertyPage() {
                   <p className="text-xs text-muted-foreground">租客可議價</p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="depositMonths">押金（月份數）</Label>
+                  <Label htmlFor="depositMonths">押金（月數）</Label>
                   <Select 
                     value={formData.depositMonths} 
                     onValueChange={(value) => setFormData(prev => ({ ...prev, depositMonths: value }))}
@@ -544,22 +552,22 @@ export function PublishPropertyPage() {
                 </div>
               </div>
 
-              {/* 描述 */}
+              {/* 房源描述 */}
               <div className="space-y-2">
                 <Label htmlFor="description">房源描述</Label>
                 <Textarea
                   id="description"
-                  placeholder="描述房間特色、周邊環境、交通便利性等..."
                   value={formData.description}
                   onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  className="min-h-[120px]"
+                  placeholder="請描述房源特色、周邊環境、交通等資訊..."
+                  rows={6}
                   required
                 />
               </div>
 
-              {/* 設備提供 */}
+              {/* 設備設施 */}
               <div className="space-y-3">
-                <Label>提供設備</Label>
+                <Label>設備設施</Label>
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { key: 'hasAirConditioner', label: '冷氣' },
@@ -653,33 +661,26 @@ export function PublishPropertyPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>確認發布費用</AlertDialogTitle>
             <AlertDialogDescription>
-              發布房源需要支付平台費用及網路手續費
+              請確認以下費用。您只需要簽名授權 USDC 轉帳，網路手續費由平台代付。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-4 my-4">
             <div className="text-sm space-y-2">
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-muted-foreground">平台費用</span>
-                <span className="font-medium">
+              <div className="flex justify-between py-2 font-semibold">
+                <span>平台費用（USDC）</span>
+                <span>
                   {pendingTransaction ? `${pendingTransaction.fees.listingFeeUsdc.toFixed(2)} USDC` : '---'}
                 </span>
               </div>
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-muted-foreground">網路手續費（預估）</span>
-                <span className="font-medium">
-                  {pendingTransaction ? `${pendingTransaction.fees.solCostUsdc.toFixed(2)} USDC` : '---'}
-                </span>
-              </div>
-              <div className="flex justify-between py-2 font-semibold">
-                <span>總計</span>
-                <span>
-                  {pendingTransaction ? `${pendingTransaction.fees.totalUsdc.toFixed(2)} USDC` : '---'}
-                </span>
-              </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              當前 SOL 價格：${pendingTransaction?.fees.solPrice.toFixed(2) || '---'} USD
-            </p>
+            <div className="bg-muted/50 rounded-lg p-3 text-sm">
+              <p className="font-medium mb-1">注意事項：</p>
+              <ul className="space-y-1 text-muted-foreground">
+                <li>• 點擊確認後會開啟錢包進行簽名</li>
+                <li>• 您只需要授權 USDC 轉帳</li>
+                <li>• 無需支付任何 SOL 網路手續費</li>
+              </ul>
+            </div>
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={handleCancelTransaction} disabled={submitting}>
@@ -689,7 +690,7 @@ export function PublishPropertyPage() {
               {submitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  確認中...
+                  處理中...
                 </>
               ) : (
                 '確認並簽名'

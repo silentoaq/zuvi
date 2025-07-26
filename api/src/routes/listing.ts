@@ -47,7 +47,7 @@ try {
 router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, res) => {
   try {
     const {
-      attestPda,  // 接收 attestPda
+      attestPda,
       ownerAttestation,
       monthlyRent,
       depositMonths,
@@ -79,13 +79,12 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
     
     const owner = new PublicKey(req.wallet!.address);
     const usdcMint = new PublicKey(process.env.USDC_MINT!);
-    const attestPdaPubkey = new PublicKey(attestPda);  // 轉換為 PublicKey
+    const attestPdaPubkey = new PublicKey(attestPda);
     
-    // 正確計算 listing PDA
     const [listingPda] = PublicKey.findProgramAddressSync(
       [
         Buffer.from('listing'),
-        attestPdaPubkey.toBuffer()  // 使用 attestPda 的 buffer
+        attestPdaPubkey.toBuffer()
       ],
       programId
     );
@@ -96,11 +95,8 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
     );
 
     const platform = await program.account.platform.fetch(platformPda);
-    
-    // 檢查手續費
     const listingFee = new BN(platform.listFee.toString());
     
-    // 取得相關 token 帳戶
     const ownerUsdc = await getAssociatedTokenAddress(
       usdcMint,
       owner,
@@ -115,26 +111,57 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
       TOKEN_PROGRAM_ID
     );
 
-    // 準備交易
+    logger.info('Account addresses:', {
+      owner: owner.toString(),
+      ownerUsdc: ownerUsdc.toString(),
+      feeReceiver: platform.feeReceiver.toString(),
+      platUsdc: platUsdc.toString(),
+      usdcMint: usdcMint.toString()
+    });
+
     const transaction = new Transaction();
     
-    // 設定計算預算
     transaction.add(
       ComputeBudgetProgram.setComputeUnitLimit({
-        units: 300_000
+        units: 400_000
       })
     );
     
     transaction.add(
       ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: 1000
+        microLamports: 5000
       })
     );
 
-    // 建立 listing 指令
+    const ownerUsdcInfo = await connection.getAccountInfo(ownerUsdc);
+    if (!ownerUsdcInfo) {
+      logger.info('Creating owner USDC account...');
+      const createOwnerUsdcIx = createAssociatedTokenAccountInstruction(
+        feePayerKeypair.publicKey,  // payer
+        ownerUsdc,                   // associatedToken
+        owner,                       // owner
+        usdcMint,                    // mint
+        TOKEN_PROGRAM_ID
+      );
+      transaction.add(createOwnerUsdcIx);
+    }
+
+    const platUsdcInfo = await connection.getAccountInfo(platUsdc);
+    if (!platUsdcInfo) {
+      logger.info('Creating platform USDC account...');
+      const createPlatUsdcIx = createAssociatedTokenAccountInstruction(
+        feePayerKeypair.publicKey,  // payer
+        platUsdc,                    // associatedToken
+        platform.feeReceiver,        // owner
+        usdcMint,                    // mint
+        TOKEN_PROGRAM_ID
+      );
+      transaction.add(createPlatUsdcIx);
+    }
+
     const listPropertyIx = await program.methods
       .listProperty(
-        attestPdaPubkey,  // 傳入 attestPda
+        attestPdaPubkey,
         new BN(monthlyRent),
         depositMonths,
         propertyDetailsHash
@@ -153,15 +180,12 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
 
     transaction.add(listPropertyIx);
 
-    // 取得最新 blockhash
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = feePayerKeypair.publicKey;
-
-    // 部分簽名
+    
     transaction.partialSign(feePayerKeypair);
 
-    // 序列化交易
     const serializedTransaction = transaction.serialize({
       requireAllSignatures: false,
       verifySignatures: false
@@ -169,16 +193,13 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
 
     const txBase64 = serializedTransaction.toString('base64');
 
-    // 取得 SOL 價格來計算手續費
     const solPrice = await getSolPrice();
     const solCostUsdc = 0.015 * solPrice;
 
     res.json({
       success: true,
-      transaction: {
-        txBase64,
-        listingPda: listingPda.toString()
-      },
+      transaction: txBase64,
+      listingPda: listingPda.toString(),
       fees: {
         listingFeeUsdc: parseInt(listingFee.toString()) / 1_000_000,
         solCostUsdc,
@@ -193,54 +214,81 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
   }
 });
 
-router.post('/confirm', verifyWallet, requireProperty, async (req: AuthRequest, res) => {
+router.post('/execute', verifyWallet, requireProperty, async (req: AuthRequest, res) => {
   try {
-    const { propertyId, txSignature, listingPda } = req.body;
+    const { signedTransaction, listingPda, propertyId } = req.body;
 
-    if (!propertyId || !txSignature || !listingPda) {
+    if (!signedTransaction || !listingPda || !propertyId) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
     const connection = new Connection(`https://${process.env.RPC_ROOT}`);
     
-    logger.info('Confirming transaction:', { txSignature });
+    const transaction = Transaction.from(Buffer.from(signedTransaction, 'base64'));
     
-    // 等待交易確認
-    const confirmation = await connection.confirmTransaction({
-      signature: txSignature,
-      blockhash: (await connection.getLatestBlockhash()).blockhash,
-      lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight
-    }, 'confirmed');
-
-    if (confirmation.value.err) {
-      throw new Error('Transaction failed');
-    }
-
-    // 取得 listing 資料
-    const programId = new PublicKey(process.env.ZUVI_PROGRAM_ID!);
-    const provider = new AnchorProvider(
-      connection,
-      {} as any,
-      { commitment: 'confirmed' }
-    );
-    
-    const program = new Program<Zuvi>(IDL as any, provider);
-    const listing = await program.account.propertyListing.fetch(new PublicKey(listingPda));
-    
-    res.json({
-      success: true,
-      listing: {
-        credentialId: propertyId,
-        owner: listing.owner.toString(),
-        monthlyRent: listing.mRent.toString(),
-        depositMonths: listing.depMonths,
-        status: listing.status
-      }
+    logger.info('Executing transaction:', {
+      feePayer: transaction.feePayer?.toString(),
+      signatures: transaction.signatures.map(sig => ({
+        publicKey: sig.publicKey?.toString(),
+        signature: sig.signature ? 'present' : 'missing'
+      }))
     });
     
+    try {
+      const signature = await connection.sendRawTransaction(transaction.serialize());
+      logger.info('Transaction sent:', signature);
+      
+      const confirmation = await connection.confirmTransaction({
+        signature,
+        blockhash: transaction.recentBlockhash!,
+        lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight
+      }, 'confirmed');
+
+      if (confirmation.value.err) {
+        throw new Error('Transaction failed');
+      }
+
+      const programId = new PublicKey(process.env.ZUVI_PROGRAM_ID!);
+      const provider = new AnchorProvider(
+        connection,
+        {} as any,
+        { commitment: 'confirmed' }
+      );
+      
+      const program = new Program<Zuvi>(IDL as any, provider);
+      const listing = await program.account.propertyListing.fetch(new PublicKey(listingPda));
+      
+      res.json({
+        success: true,
+        signature,
+        listing: {
+          credentialId: propertyId,
+          owner: listing.owner.toString(),
+          monthlyRent: listing.mRent.toString(),
+          depositMonths: listing.depMonths,
+          status: listing.status
+        }
+      });
+    } catch (sendError: any) {
+      logger.error('Transaction failed:', {
+        error: sendError.message,
+        logs: sendError.logs
+      });
+      
+      if (sendError.logs) {
+        res.status(500).json({ 
+          error: 'Transaction failed', 
+          logs: sendError.logs,
+          message: sendError.message 
+        });
+      } else {
+        res.status(500).json({ error: sendError.message });
+      }
+    }
+    
   } catch (error) {
-    logger.error('Failed to confirm transaction:', error);
-    res.status(500).json({ error: 'Failed to confirm transaction' });
+    logger.error('Failed to execute transaction:', error);
+    res.status(500).json({ error: 'Failed to execute transaction' });
   }
 });
 

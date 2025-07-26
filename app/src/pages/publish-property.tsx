@@ -266,7 +266,23 @@ export function PublishPropertyPage() {
       });
 
       if (!prepareRes.ok) throw new Error('Failed to prepare transaction');
-      const { transaction: txBase64, listingPda } = await prepareRes.json();
+      const prepareData = await prepareRes.json();
+
+      const { transaction: txBase64, listingPda, fees } = prepareData;
+      
+      const confirmFees = window.confirm(
+        `發布費用明細：\n\n` +
+        `平台費用：${(fees.listingFeeUsdc / 1_000_000).toFixed(2)} USDC\n` +
+        `區塊鏈手續費：${(fees.solCostUsdc / 1_000_000).toFixed(2)} USDC\n` +
+        `（SOL 價格：${fees.solPrice.toFixed(2)}）\n\n` +
+        `總計：${(fees.totalUsdc / 1_000_000).toFixed(2)} USDC\n\n` +
+        `確認支付並發布房源？`
+      );
+      
+      if (!confirmFees) {
+        setSubmitting(false);
+        return;
+      }
 
       const connection = new Connection(`https://${process.env.REACT_APP_RPC_ROOT || 'api.devnet.solana.com'}`);
       const transaction = Transaction.from(Buffer.from(txBase64, 'base64'));
@@ -332,7 +348,7 @@ export function PublishPropertyPage() {
           <CardContent className="space-y-4">
             {/* 憑證選擇/顯示 */}
             {attestation?.attestations?.twland?.list && attestation.attestations.twland.list.length > 1 ? (
-              <Select value={selectedCredentialId} onValueChange={setSelectedCredentialId}>
+              <Select value={selectedCredentialId} onValueChange={setSelectedCredentialId} disabled={disclosureStep !== null}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="選擇一個房產憑證" />
                 </SelectTrigger>

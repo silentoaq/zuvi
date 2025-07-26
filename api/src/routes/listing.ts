@@ -1,8 +1,20 @@
 import express from 'express';
-import { Connection, PublicKey, Transaction, SystemProgram, Keypair } from '@solana/web3.js';
+import { 
+  Connection, 
+  PublicKey, 
+  Transaction, 
+  SystemProgram, 
+  Keypair, 
+  LAMPORTS_PER_SOL,
+  ComputeBudgetProgram
+} from '@solana/web3.js';
 import { Program, AnchorProvider, Idl } from '@coral-xyz/anchor';
 import BN from 'bn.js';
-import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token';
+import { 
+  TOKEN_PROGRAM_ID, 
+  getAssociatedTokenAddress,
+  createAssociatedTokenAccountInstruction
+} from '@solana/spl-token';
 import bs58 from 'bs58';
 import dotenv from 'dotenv';
 import IDL from '../types/zuvi.json' assert { type: 'json' };
@@ -12,13 +24,11 @@ import { createLogger } from '../utils/logger.ts';
 import { getSolPrice } from '../services/price.ts';
 import type { Zuvi } from '../types/zuvi.ts';
 
-// 確保環境變數被載入
 dotenv.config();
 
 const router = express.Router();
 const logger = createLogger();
 
-// 載入代付錢包
 let feePayerKeypair: Keypair;
 
 try {
@@ -33,12 +43,11 @@ try {
   throw error;
 }
 
-// 發布房源交易準備
 router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, res) => {
   try {
     const {
       selectedCredentialId,
-      ownerAttestation,  // 這是 attestation 的 address (PDA)
+      ownerAttestation,
       monthlyRent,
       depositMonths,
       propertyDetailsHash
@@ -63,7 +72,6 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
     const usdcMint = new PublicKey(process.env.USDC_MINT!);
     const attestPda = new PublicKey(ownerAttestation);
     
-    // PDA - 使用 attestation address 作為 seed
     const [platformPda] = PublicKey.findProgramAddressSync(
       [Buffer.from('platform')],
       programId
@@ -73,8 +81,7 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
       [Buffer.from('listing'), attestPda.toBuffer()],
       programId
     );
-    
-    // 檢查平台是否已初始化
+
     let platform;
     try {
       platform = await program.account.platform.fetch(platformPda);
@@ -82,7 +89,6 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
       return res.status(400).json({ error: 'Platform not initialized' });
     }
     
-    // Token 帳戶
     const ownerUsdcAccount = await getAssociatedTokenAddress(
       usdcMint,
       owner
@@ -94,16 +100,72 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
       true
     );
     
-    // 建立交易
     const transaction = new Transaction();
     
-    // 建立指令 - attestPda 就是 ownerAttestation
-    const instruction = await program.methods
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitLimit({
+        units: 300000
+      }),
+      ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: 5000
+      })
+    );
+    
+    let totalSolCost = 0;
+    
+    const platformUsdcAccountInfo = await connection.getAccountInfo(platformUsdcAccount);
+    if (!platformUsdcAccountInfo) {
+      const rentExemptBalance = await connection.getMinimumBalanceForRentExemption(165);
+      totalSolCost += rentExemptBalance / LAMPORTS_PER_SOL;
+      
+      const createATAIx = createAssociatedTokenAccountInstruction(
+        feePayerKeypair.publicKey,
+        platformUsdcAccount,
+        platformPda,
+        usdcMint
+      );
+      transaction.add(createATAIx);
+    }
+    
+    const ownerUsdcAccountInfo = await connection.getAccountInfo(ownerUsdcAccount);
+    if (!ownerUsdcAccountInfo) {
+      const rentExemptBalance = await connection.getMinimumBalanceForRentExemption(165);
+      totalSolCost += rentExemptBalance / LAMPORTS_PER_SOL;
+      
+      const createOwnerATAIx = createAssociatedTokenAccountInstruction(
+        feePayerKeypair.publicKey,
+        ownerUsdcAccount,
+        owner,
+        usdcMint
+      );
+      transaction.add(createOwnerATAIx);
+    }
+    
+    const listingAccountInfo = await connection.getAccountInfo(listingPda);
+    if (!listingAccountInfo) {
+      const LISTING_SIZE = 8 + 32 + 32 + 8 + 1 + 32 + 32 + 1 + 8 + 1 + 200;
+      const rentExemptBalance = await connection.getMinimumBalanceForRentExemption(LISTING_SIZE);
+      totalSolCost += rentExemptBalance / LAMPORTS_PER_SOL;
+    }
+    
+    const baseTransactionFee = 5000;
+    const computeUnits = 300000;
+    const computeUnitPrice = 5000;
+    const priorityFee = (computeUnits * computeUnitPrice) / 1_000_000;
+    totalSolCost += (baseTransactionFee + priorityFee) / LAMPORTS_PER_SOL;
+    
+    const solPrice = await getSolPrice();
+    const totalSolCostInUsdc = Math.ceil(totalSolCost * solPrice * 1_000_000);
+    
+    const listingFee = platform.listFee.toNumber();
+    const totalUsdcCost = listingFee + totalSolCostInUsdc;
+    
+    const listInstruction = await program.methods
       .listProperty(
-        attestPda,                        // attestPda (PublicKey)
-        new BN(monthlyRent),              // mRent
-        depositMonths,                    // depMonths (u8)
-        propertyDetailsHash               // details (string)
+        attestPda,
+        new BN(monthlyRent),
+        depositMonths,
+        propertyDetailsHash
       )
       .accountsPartial({
         platform: platformPda,
@@ -117,34 +179,28 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
       })
       .instruction();
       
-    transaction.add(instruction);
+    transaction.add(listInstruction);
     
-    // 設定代付者
     transaction.feePayer = feePayerKeypair.publicKey;
     
-    // 取得最新區塊雜湊
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
     transaction.recentBlockhash = blockhash;
     
-    // 部分簽名（代付者簽名）
     transaction.partialSign(feePayerKeypair);
     
-    // 序列化交易供前端簽名
     const serializedTransaction = transaction.serialize({
       requireAllSignatures: false,
       verifySignatures: false
     });
-    
-    // 計算費用
-    const listingFee = platform.listFee.toNumber();  
-    const solPrice = await getSolPrice();
     
     res.json({
       transaction: serializedTransaction.toString('base64'),
       listingPda: listingPda.toString(),
       fees: {
         listingFeeUsdc: listingFee,
-        solPriceUsdc: solPrice
+        solCostUsdc: totalSolCostInUsdc,
+        totalUsdc: totalUsdcCost,
+        solPrice: solPrice
       },
       lastValidBlockHeight
     });
@@ -155,10 +211,9 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
   }
 });
 
-// 確認交易
 router.post('/confirm', verifyWallet, async (req: AuthRequest, res) => {
   try {
-    const { signature, listingPda, propertyId } = req.body;  
+    const { signature, listingPda, propertyId } = req.body;
     
     if (!signature || !listingPda || !propertyId) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -166,14 +221,12 @@ router.post('/confirm', verifyWallet, async (req: AuthRequest, res) => {
     
     const connection = new Connection(`https://${process.env.RPC_ROOT}`);
     
-    // 等待交易確認
     const result = await connection.confirmTransaction(signature, 'confirmed');
     
     if (result.value.err) {
       throw new Error('Transaction failed');
     }
     
-    // 查詢鏈上資料確認成功
     const programId = new PublicKey(process.env.ZUVI_PROGRAM_ID!);
     const provider = new AnchorProvider(
       connection,
@@ -187,10 +240,10 @@ router.post('/confirm', verifyWallet, async (req: AuthRequest, res) => {
     res.json({
       success: true,
       listing: {
-        credentialId: propertyId,  
+        credentialId: propertyId,
         owner: listing.owner.toString(),
-        monthlyRent: listing.mRent.toString(),      
-        depositMonths: listing.depMonths,           
+        monthlyRent: listing.mRent.toString(),
+        depositMonths: listing.depMonths,
         status: listing.status
       }
     });
@@ -198,6 +251,24 @@ router.post('/confirm', verifyWallet, async (req: AuthRequest, res) => {
   } catch (error) {
     logger.error('Failed to confirm transaction:', error);
     res.status(500).json({ error: 'Failed to confirm transaction' });
+  }
+});
+
+router.get('/fee-payer-balance', async (req, res) => {
+  try {
+    const connection = new Connection(`https://${process.env.RPC_ROOT}`);
+    const balance = await connection.getBalance(feePayerKeypair.publicKey);
+    const solBalance = balance / LAMPORTS_PER_SOL;
+    
+    res.json({
+      address: feePayerKeypair.publicKey.toString(),
+      balanceLamports: balance,
+      balanceSOL: solBalance,
+      isLow: solBalance < 0.1
+    });
+  } catch (error) {
+    logger.error('Failed to get fee payer balance:', error);
+    res.status(500).json({ error: 'Failed to get balance' });
   }
 });
 

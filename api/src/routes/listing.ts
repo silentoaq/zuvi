@@ -13,7 +13,8 @@ import BN from 'bn.js';
 import { 
   TOKEN_PROGRAM_ID, 
   getAssociatedTokenAddress,
-  createAssociatedTokenAccountInstruction
+  createAssociatedTokenAccountInstruction,
+  createTransferInstruction
 } from '@solana/spl-token';
 import bs58 from 'bs58';
 import dotenv from 'dotenv';
@@ -70,7 +71,6 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
     
     const owner = new PublicKey(req.wallet!.address);
     const usdcMint = new PublicKey(process.env.USDC_MINT!);
-    const attestPda = new PublicKey(ownerAttestation);
     
     const [platformPda] = PublicKey.findProgramAddressSync(
       [Buffer.from('platform')],
@@ -78,16 +78,11 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
     );
     
     const [listingPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from('listing'), attestPda.toBuffer()],
+      [Buffer.from('listing'), Buffer.from(selectedCredentialId)],
       programId
     );
-
-    let platform;
-    try {
-      platform = await program.account.platform.fetch(platformPda);
-    } catch {
-      return res.status(400).json({ error: 'Platform not initialized' });
-    }
+    
+    const platform = await program.account.platform.fetch(platformPda);
     
     const ownerUsdcAccount = await getAssociatedTokenAddress(
       usdcMint,
@@ -102,30 +97,7 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
     
     const transaction = new Transaction();
     
-    transaction.add(
-      ComputeBudgetProgram.setComputeUnitLimit({
-        units: 300000
-      }),
-      ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: 5000
-      })
-    );
-    
     let totalSolCost = 0;
-    
-    const platformUsdcAccountInfo = await connection.getAccountInfo(platformUsdcAccount);
-    if (!platformUsdcAccountInfo) {
-      const rentExemptBalance = await connection.getMinimumBalanceForRentExemption(165);
-      totalSolCost += rentExemptBalance / LAMPORTS_PER_SOL;
-      
-      const createATAIx = createAssociatedTokenAccountInstruction(
-        feePayerKeypair.publicKey,
-        platformUsdcAccount,
-        platformPda,
-        usdcMint
-      );
-      transaction.add(createATAIx);
-    }
     
     const ownerUsdcAccountInfo = await connection.getAccountInfo(ownerUsdcAccount);
     if (!ownerUsdcAccountInfo) {
@@ -148,17 +120,15 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
       totalSolCost += rentExemptBalance / LAMPORTS_PER_SOL;
     }
     
-    const baseTransactionFee = 5000;
-    const computeUnits = 300000;
-    const computeUnitPrice = 5000;
-    const priorityFee = (computeUnits * computeUnitPrice) / 1_000_000;
-    totalSolCost += (baseTransactionFee + priorityFee) / LAMPORTS_PER_SOL;
+    const transferInstruction = createTransferInstruction(
+      ownerUsdcAccount,
+      platformUsdcAccount,
+      owner,
+      0
+    );
+    transaction.add(transferInstruction);
     
-    const solPrice = await getSolPrice();
-    const totalSolCostInUsdc = Math.ceil(totalSolCost * solPrice * 1_000_000);
-    
-    const listingFee = platform.listFee.toNumber();
-    const totalUsdcCost = listingFee + totalSolCostInUsdc;
+    const attestPda = new PublicKey(ownerAttestation);
     
     const listInstruction = await program.methods
       .listProperty(
@@ -181,16 +151,74 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
       
     transaction.add(listInstruction);
     
-    transaction.feePayer = feePayerKeypair.publicKey;
+    const testTransaction = new Transaction();
+    testTransaction.add(...transaction.instructions);
+    testTransaction.feePayer = feePayerKeypair.publicKey;
+    testTransaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+    
+    const simulationResult = await connection.simulateTransaction(testTransaction);
+    
+    if (simulationResult.value.err) {
+      logger.error('Transaction simulation error:', simulationResult.value.err);
+      throw new Error('Transaction simulation failed');
+    }
+    
+    const actualComputeUnits = simulationResult.value.unitsConsumed || 200000;
+    const safetyMargin = 1.2;
+    const finalComputeUnits = Math.ceil(actualComputeUnits * safetyMargin);
+    
+    const computeUnitPrice = 5000;
+    const priorityFee = Math.ceil((finalComputeUnits * computeUnitPrice) / 1_000_000);
+    const baseTransactionFee = 5000;
+    totalSolCost += (baseTransactionFee + priorityFee) / LAMPORTS_PER_SOL;
+    
+    const solPrice = await getSolPrice();
+    const totalSolCostInUsdc = Math.ceil(totalSolCost * solPrice * 1_000_000);
+    
+    const listingFee = platform.listFee.toNumber();
+    const totalUsdcCost = listingFee + totalSolCostInUsdc;
+    
+    const finalTransaction = new Transaction();
+    
+    finalTransaction.add(
+      ComputeBudgetProgram.setComputeUnitLimit({
+        units: finalComputeUnits
+      }),
+      ComputeBudgetProgram.setComputeUnitPrice({
+        microLamports: computeUnitPrice
+      })
+    );
+    
+    for (const ix of transaction.instructions) {
+      if (ix.programId.equals(TOKEN_PROGRAM_ID) && ix.data[0] === 3) {
+        const transferIx = createTransferInstruction(
+          ownerUsdcAccount,
+          platformUsdcAccount,
+          owner,
+          totalUsdcCost
+        );
+        finalTransaction.add(transferIx);
+      } else {
+        finalTransaction.add(ix);
+      }
+    }
+    
+    finalTransaction.feePayer = feePayerKeypair.publicKey;
     
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-    transaction.recentBlockhash = blockhash;
+    finalTransaction.recentBlockhash = blockhash;
     
-    transaction.partialSign(feePayerKeypair);
+    finalTransaction.partialSign(feePayerKeypair);
     
-    const serializedTransaction = transaction.serialize({
+    const serializedTransaction = finalTransaction.serialize({
       requireAllSignatures: false,
       verifySignatures: false
+    });
+    
+    logger.info('Transaction prepared', {
+      computeUnits: finalComputeUnits,
+      totalSolCost,
+      totalUsdcCost: totalUsdcCost / 1_000_000
     });
     
     res.json({
@@ -200,7 +228,8 @@ router.post('/prepare', verifyWallet, requireProperty, async (req: AuthRequest, 
         listingFeeUsdc: listingFee,
         solCostUsdc: totalSolCostInUsdc,
         totalUsdc: totalUsdcCost,
-        solPrice: solPrice
+        solPrice: solPrice,
+        computeUnits: finalComputeUnits
       },
       lastValidBlockHeight
     });

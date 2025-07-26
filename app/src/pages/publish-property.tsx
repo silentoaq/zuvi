@@ -15,6 +15,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useAttestation } from "@/hooks/use-attestation";
 import { useWallet } from "@/hooks/use-wallet";
@@ -24,6 +34,13 @@ interface DisclosedData {
   address: string;
   building_area: string;
   use: string;
+}
+
+interface FeeDetails {
+  listingFeeUsdc: number;
+  solCostUsdc: number;
+  totalUsdc: number;
+  solPrice: number;
 }
 
 export function PublishPropertyPage() {
@@ -41,6 +58,13 @@ export function PublishPropertyPage() {
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [vpRequestUri, setVpRequestUri] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  
+  const [showFeeDialog, setShowFeeDialog] = useState(false);
+  const [pendingTransaction, setPendingTransaction] = useState<{
+    txBase64: string;
+    listingPda: string;
+    fees: FeeDetails;
+  } | null>(null);
 
   useEffect(() => {
     if (!stateCredentialId && attestation?.attestations?.twland?.list.length === 1) {
@@ -56,27 +80,17 @@ export function PublishPropertyPage() {
     buildingArea: "",
     propertyUse: "",
     amenities: {
-      hasParking: false,
-      hasElevator: false,
-      hasBalcony: false,
       hasAirConditioner: false,
       hasWasher: false,
       hasRefrigerator: false,
-      hasCookingAllowed: false,
-      hasPetAllowed: false,
+      hasWaterHeater: false,
+      hasInternet: false,
+      hasFurniture: false,
     },
     rules: {
       noSmoking: false,
-      noParty: false,
-      quietHours: false,
-      visitorRestriction: false,
-    },
-    location: {
-      district: "",
-      nearbyMRT: "",
-      distanceToMRT: "",
-      nearbySchool: "",
-      nearbyConvenience: "",
+      noPet: false,
+      noCooking: false,
     }
   });
 
@@ -219,7 +233,7 @@ export function PublishPropertyPage() {
         features: {
           address: disclosedData.address,
           buildingArea: disclosedData.building_area,
-          propertyUse: disclosedData.use
+          propertyUse: disclosedData.use,
         },
         amenities: Object.entries(formData.amenities)
           .filter(([_, value]) => value)
@@ -227,7 +241,6 @@ export function PublishPropertyPage() {
         rules: Object.entries(formData.rules)
           .filter(([_, value]) => value)
           .map(([key, _]) => key),
-        location: formData.location
       };
 
       const detailsRes = await fetch('/api/ipfs/upload-property-details', {
@@ -268,29 +281,33 @@ export function PublishPropertyPage() {
       if (!prepareRes.ok) throw new Error('Failed to prepare transaction');
       const prepareData = await prepareRes.json();
 
-      const { transaction: txBase64, listingPda, fees } = prepareData;
+      setPendingTransaction({
+        txBase64: prepareData.transaction,
+        listingPda: prepareData.listingPda,
+        fees: prepareData.fees
+      });
+      setShowFeeDialog(true);
       
-      const confirmFees = window.confirm(
-        `發布費用明細：\n\n` +
-        `平台費用：${(fees.listingFeeUsdc / 1_000_000).toFixed(2)} USDC\n` +
-        `區塊鏈手續費：${(fees.solCostUsdc / 1_000_000).toFixed(2)} USDC\n` +
-        `（SOL 價格：${fees.solPrice.toFixed(2)}）\n\n` +
-        `總計：${(fees.totalUsdc / 1_000_000).toFixed(2)} USDC\n\n` +
-        `確認支付並發布房源？`
-      );
-      
-      if (!confirmFees) {
-        setSubmitting(false);
-        return;
-      }
+    } catch (error) {
+      console.error("Submit error:", error);
+      toast.error("房源發布失敗");
+      setSubmitting(false);
+    }
+  };
 
+  const handleConfirmTransaction = async () => {
+    if (!pendingTransaction || !wallet) return;
+
+    try {
       const connection = new Connection(`https://${process.env.REACT_APP_RPC_ROOT || 'api.devnet.solana.com'}`);
-      const transaction = Transaction.from(Buffer.from(txBase64, 'base64'));
+      const transaction = Transaction.from(Buffer.from(pendingTransaction.txBase64, 'base64'));
       const signedTransaction = await wallet.signTransaction(transaction);
       const signature = await connection.sendRawTransaction(signedTransaction.serialize());
       
       toast.success("交易已發送，等待確認...");
+      setShowFeeDialog(false);
 
+      const token = await createAuthToken();
       const confirmRes = await fetch('/api/listing/confirm', {
         method: 'POST',
         headers: {
@@ -299,7 +316,7 @@ export function PublishPropertyPage() {
         },
         body: JSON.stringify({
           signature,
-          listingPda,
+          listingPda: pendingTransaction.listingPda,
           propertyId: selectedCredentialId
         })
       });
@@ -310,11 +327,18 @@ export function PublishPropertyPage() {
       navigate('/dashboard');
       
     } catch (error) {
-      console.error("Submit error:", error);
-      toast.error("房源發布失敗");
+      console.error("Transaction error:", error);
+      toast.error("交易失敗");
     } finally {
       setSubmitting(false);
+      setPendingTransaction(null);
     }
+  };
+
+  const handleCancelTransaction = () => {
+    setShowFeeDialog(false);
+    setPendingTransaction(null);
+    setSubmitting(false);
   };
 
   return (
@@ -385,71 +409,69 @@ export function PublishPropertyPage() {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    處理中...
+                    準備中...
                   </>
                 ) : (
-                  "開始揭露房產資訊"
+                  '開始揭露房產資訊'
                 )}
               </Button>
             )}
 
-            {/* QR Code - 簡化版 */}
+            {/* QR Code 顯示 */}
             {disclosureStep === "verifying" && qrCodeUrl && (
               <div className="space-y-4">
-                <div className="rounded-lg border-2 border-dashed border-primary/30 bg-primary/5 p-6">
-                  <div className="mx-auto max-w-sm space-y-4">
-                    <p className="text-center text-sm text-muted-foreground">
-                      使用 walletbz 掃描 QR Code
-                    </p>
-                    <div className="flex justify-center">
-                      <div className="rounded-xl bg-white p-3 shadow-sm">
-                        <img 
-                          src={qrCodeUrl} 
-                          alt="QR Code" 
-                          className="h-48 w-48"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      等待揭露完成
-                    </div>
+                <div className="rounded-lg border bg-muted/20 p-6 text-center">
+                  <p className="text-sm text-muted-foreground mb-4">請使用 walletbz 掃描 QR Code 進行揭露</p>
+                  <div className="bg-white p-4 rounded-lg inline-block">
+                    <img src={qrCodeUrl} alt="VP Request QR Code" className="w-48 h-48" />
+                  </div>
+                  <div className="mt-4 flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">等待揭露完成...</span>
                   </div>
                 </div>
                 
                 {vpRequestUri && (
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={vpRequestUri}
-                      readOnly
-                      className="flex-1 text-xs"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleCopyLink}
-                    >
-                      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                    </Button>
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground text-center">或複製連結在錢包中開啟：</p>
+                    <div className="flex gap-2">
+                      <Input
+                        value={vpRequestUri}
+                        readOnly
+                        className="text-xs font-mono"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCopyLink}
+                      >
+                        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
             )}
 
-            {/* 已揭露資訊 - 簡化版 */}
+            {/* 已揭露資訊 */}
             {disclosedData && (
-              <div className="rounded-lg border bg-green-50 dark:bg-green-950/20 p-4">
-                <div className="flex items-start gap-3">
-                  <Check className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5" />
-                  <div className="flex-1 space-y-2">
-                    <p className="font-medium text-green-900 dark:text-green-100">
-                      房產資訊已揭露
-                    </p>
-                    <div className="space-y-1 text-sm text-green-800 dark:text-green-200">
-                      <p>地址：{disclosedData.address}</p>
-                      <p>建坪：{disclosedData.building_area}</p>
-                      <p>用途：{disclosedData.use}</p>
-                    </div>
+              <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Check className="h-4 w-4 text-green-600" />
+                  <span className="text-sm font-medium text-green-600">房產資訊已揭露</span>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">地址：</span>
+                    <span className="ml-2">{disclosedData.address}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">建坪：</span>
+                    <span className="ml-2">{disclosedData.building_area}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">用途：</span>
+                    <span className="ml-2">{disclosedData.use}</span>
                   </div>
                 </div>
               </div>
@@ -457,216 +479,199 @@ export function PublishPropertyPage() {
           </CardContent>
         </Card>
 
-        {/* 步驟二：填寫租賃資訊 */}
-        {disclosedData && (
-          <Card>
-            <CardHeader className="pb-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary text-sm font-semibold">
-                  2
-                </div>
-                <CardTitle className="text-xl">設定租賃條件</CardTitle>
+        {/* 步驟二：設定租賃條件 */}
+        <Card className={!disclosedData ? "opacity-50 pointer-events-none" : ""}>
+          <CardHeader className="pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary text-sm font-semibold">
+                2
               </div>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* 基本資訊 */}
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="monthlyRent">月租金 (USDC) *</Label>
-                    <Input
-                      id="monthlyRent"
-                      type="number"
-                      value={formData.monthlyRent}
-                      onChange={(e) => setFormData(prev => ({ ...prev, monthlyRent: e.target.value }))}
-                      placeholder="請輸入期望租金"
-                      required
-                    />
-                    <p className="text-xs text-muted-foreground">此為期望租金，可與租客協商</p>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="depositMonths">押金</Label>
-                    <Select 
-                      value={formData.depositMonths} 
-                      onValueChange={(value) => setFormData(prev => ({ ...prev, depositMonths: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">1 個月</SelectItem>
-                        <SelectItem value="2">2 個月</SelectItem>
-                        <SelectItem value="3">3 個月</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
+              <CardTitle className="text-xl">設定租賃條件</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* 基本資訊 */}
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="description">房源描述 *</Label>
-                  <Textarea
-                    id="description"
-                    value={formData.description}
-                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="請詳細描述房源特色、格局、採光、通風等資訊..."
-                    rows={4}
+                  <Label htmlFor="monthlyRent">期望月租金 (USDC)</Label>
+                  <Input
+                    id="monthlyRent"
+                    type="number"
+                    value={formData.monthlyRent}
+                    onChange={(e) => setFormData(prev => ({ ...prev, monthlyRent: e.target.value }))}
+                    placeholder="例：500"
                     required
                   />
+                  <p className="text-xs text-muted-foreground">租客可議價</p>
                 </div>
-
-                {/* 設施與規則 */}
-                <div className="grid gap-6 md:grid-cols-2">
-                  <div className="space-y-3">
-                    <h4 className="font-medium text-sm">房屋設施</h4>
-                    <div className="grid grid-cols-2 gap-3">
-                      {Object.entries({
-                        hasParking: "停車位",
-                        hasElevator: "電梯",
-                        hasBalcony: "陽台",
-                        hasAirConditioner: "冷氣",
-                        hasWasher: "洗衣機",
-                        hasRefrigerator: "冰箱",
-                        hasCookingAllowed: "可開伙",
-                        hasPetAllowed: "可養寵物"
-                      }).map(([key, label]) => (
-                        <div key={key} className="flex items-center space-x-2">
-                          <Checkbox 
-                            id={key}
-                            checked={formData.amenities[key as keyof typeof formData.amenities]}
-                            onCheckedChange={(checked) => 
-                              setFormData(prev => ({ 
-                                ...prev, 
-                                amenities: { ...prev.amenities, [key]: !!checked }
-                              }))
-                            }
-                          />
-                          <Label htmlFor={key} className="text-sm font-normal cursor-pointer">
-                            {label}
-                          </Label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <h4 className="font-medium text-sm">租屋規則</h4>
-                    <div className="grid grid-cols-1 gap-3">
-                      {Object.entries({
-                        noSmoking: "禁止吸菸",
-                        noParty: "禁止聚會",
-                        quietHours: "晚上10點後保持安靜",
-                        visitorRestriction: "訪客需登記"
-                      }).map(([key, label]) => (
-                        <div key={key} className="flex items-center space-x-2">
-                          <Checkbox 
-                            id={key}
-                            checked={formData.rules[key as keyof typeof formData.rules]}
-                            onCheckedChange={(checked) => 
-                              setFormData(prev => ({ 
-                                ...prev, 
-                                rules: { ...prev.rules, [key]: !!checked }
-                              }))
-                            }
-                          />
-                          <Label htmlFor={key} className="text-sm font-normal cursor-pointer">
-                            {label}
-                          </Label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 位置資訊 */}
-                <div className="space-y-3">
-                  <h4 className="font-medium text-sm">位置資訊</h4>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <Input
-                      placeholder="行政區（如：大安區）"
-                      value={formData.location.district}
-                      onChange={(e) => setFormData(prev => ({ 
-                        ...prev, 
-                        location: { ...prev.location, district: e.target.value }
-                      }))}
-                    />
-                    <Input
-                      placeholder="最近捷運站"
-                      value={formData.location.nearbyMRT}
-                      onChange={(e) => setFormData(prev => ({ 
-                        ...prev, 
-                        location: { ...prev.location, nearbyMRT: e.target.value }
-                      }))}
-                    />
-                    <Input
-                      placeholder="步行至捷運時間"
-                      value={formData.location.distanceToMRT}
-                      onChange={(e) => setFormData(prev => ({ 
-                        ...prev, 
-                        location: { ...prev.location, distanceToMRT: e.target.value }
-                      }))}
-                    />
-                    <Input
-                      placeholder="附近學校"
-                      value={formData.location.nearbySchool}
-                      onChange={(e) => setFormData(prev => ({ 
-                        ...prev, 
-                        location: { ...prev.location, nearbySchool: e.target.value }
-                      }))}
-                    />
-                  </div>
-                  <Textarea
-                    placeholder="生活機能描述（便利商店、超市、餐廳等）"
-                    value={formData.location.nearbyConvenience}
-                    onChange={(e) => setFormData(prev => ({ 
-                      ...prev, 
-                      location: { ...prev.location, nearbyConvenience: e.target.value }
-                    }))}
-                    rows={2}
-                  />
-                </div>
-
-                {/* 房源照片 */}
-                <div className="space-y-3">
-                  <h4 className="font-medium text-sm">房源照片 *</h4>
-                  <ImageUpload
-                    maxFiles={10}
-                    onImagesChange={setUploadedImageHashes}
-                    disabled={submitting}
-                    getAuthToken={createAuthToken}
-                  />
-                </div>
-
-                {/* 提交按鈕 */}
-                <div className="flex gap-3 pt-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => navigate(-1)}
-                    disabled={submitting}
+                <div className="space-y-2">
+                  <Label htmlFor="depositMonths">押金（月數）</Label>
+                  <Select 
+                    value={formData.depositMonths} 
+                    onValueChange={(value) => setFormData(prev => ({ ...prev, depositMonths: value }))}
                   >
-                    取消
-                  </Button>
-                  <Button 
-                    type="submit" 
-                    disabled={submitting || uploadedImageHashes.length === 0}
-                    className="flex-1"
-                  >
-                    {submitting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        發布中...
-                      </>
-                    ) : (
-                      "確認發布"
-                    )}
-                  </Button>
+                    <SelectTrigger id="depositMonths">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1 個月</SelectItem>
+                      <SelectItem value="2">2 個月</SelectItem>
+                      <SelectItem value="3">3 個月</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              </form>
-            </CardContent>
-          </Card>
-        )}
+              </div>
+
+              {/* 房源描述 */}
+              <div className="space-y-2">
+                <Label htmlFor="description">房源描述</Label>
+                <Textarea
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="請描述房源特色、格局、周邊環境等資訊..."
+                  rows={4}
+                  required
+                />
+              </div>
+
+              {/* 設備設施 */}
+              <div className="space-y-3">
+                <Label>設備設施</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { key: 'hasAirConditioner', label: '冷氣' },
+                    { key: 'hasWasher', label: '洗衣機' },
+                    { key: 'hasRefrigerator', label: '冰箱' },
+                    { key: 'hasWaterHeater', label: '熱水器' },
+                    { key: 'hasInternet', label: '網路' },
+                    { key: 'hasFurniture', label: '基本家具' },
+                  ].map(({ key, label }) => (
+                    <div key={key} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={key}
+                        checked={formData.amenities[key as keyof typeof formData.amenities]}
+                        onCheckedChange={(checked) => 
+                          setFormData(prev => ({
+                            ...prev,
+                            amenities: { ...prev.amenities, [key]: !!checked }
+                          }))
+                        }
+                      />
+                      <Label htmlFor={key} className="text-sm font-normal cursor-pointer">
+                        {label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 租屋規則 */}
+              <div className="space-y-3">
+                <Label>租屋規則</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { key: 'noSmoking', label: '禁止吸煙' },
+                    { key: 'noPet', label: '禁止養寵物' },
+                    { key: 'noCooking', label: '禁止開伙' },
+                  ].map(({ key, label }) => (
+                    <div key={key} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={key}
+                        checked={formData.rules[key as keyof typeof formData.rules]}
+                        onCheckedChange={(checked) => 
+                          setFormData(prev => ({
+                            ...prev,
+                            rules: { ...prev.rules, [key]: !!checked }
+                          }))
+                        }
+                      />
+                      <Label htmlFor={key} className="text-sm font-normal cursor-pointer">
+                        {label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 房源照片 */}
+              <div className="space-y-2">
+                <Label>房源照片（最多10張）</Label>
+                <ImageUpload
+                  onImagesChange={(hashes: string[]) => setUploadedImageHashes(hashes)}
+                  maxFiles={10}
+                  getAuthToken={createAuthToken}
+                  disabled={submitting}
+                />
+              </div>
+
+              {/* 提交按鈕 */}
+              <Button 
+                type="submit" 
+                className="w-full"
+                disabled={submitting || !disclosedData}
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    處理中...
+                  </>
+                ) : (
+                  '發布房源'
+                )}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* 費用確認對話框 */}
+      <AlertDialog open={showFeeDialog} onOpenChange={setShowFeeDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>確認發布費用</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-4">
+              <div className="text-sm space-y-2">
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-muted-foreground">平台費用</span>
+                  <span className="font-medium">
+                    {pendingTransaction ? (pendingTransaction.fees.listingFeeUsdc / 1_000_000).toFixed(2) : '0'} USDC
+                  </span>
+                </div>
+                <div className="flex justify-between py-2 border-b">
+                  <span className="text-muted-foreground">區塊鏈手續費</span>
+                  <span className="font-medium">
+                    {pendingTransaction ? (pendingTransaction.fees.solCostUsdc / 1_000_000).toFixed(2) : '0'} USDC
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-xs text-muted-foreground">
+                    SOL 價格：${pendingTransaction?.fees.solPrice.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between py-2 font-semibold text-base">
+                  <span>總計</span>
+                  <span className="text-primary">
+                    {pendingTransaction ? (pendingTransaction.fees.totalUsdc / 1_000_000).toFixed(2) : '0'} USDC
+                  </span>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                確認支付上述費用並發布房源？
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelTransaction}>
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmTransaction}>
+              確認支付
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

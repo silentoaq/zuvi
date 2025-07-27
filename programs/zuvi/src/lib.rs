@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
+pub mod constants;
 pub mod errors;
-pub mod events;
 pub mod instructions;
 pub mod state;
 
@@ -13,152 +13,104 @@ declare_id!("2Mipufx8cUUVUD5bqZjGK2yFWvjVM4jBaKVmw9zD5hzP");
 pub mod zuvi {
     use super::*;
 
-    // 系統初始化 - 只能執行一次
+    /// 初始化系統配置
+    /// 設定 API 簽名者、仲裁者、費用接收者、USDC mint 和費率
     pub fn initialize(
         ctx: Context<Initialize>,
-        authority: Pubkey,
         api_signer: Pubkey,
         arbitrator: Pubkey,
         fee_receiver: Pubkey,
-        fee_rate: u16,
         usdc_mint: Pubkey,
+        fee_rate: u16,
     ) -> Result<()> {
-        instructions::initialize(ctx, authority, api_signer, arbitrator, fee_receiver, fee_rate, usdc_mint)
+        instructions::initialize(ctx, api_signer, arbitrator, fee_receiver, usdc_mint, fee_rate)
     }
 
-    // 更新系統設定 - 只有 authority 可執行
-    pub fn update_config(
-        ctx: Context<UpdateConfig>,
-        api_signer: Option<Pubkey>,
-        arbitrator: Option<Pubkey>,
-        fee_receiver: Option<Pubkey>,
-        fee_rate: Option<u16>,
-    ) -> Result<()> {
-        instructions::update_config(ctx, api_signer, arbitrator, fee_receiver, fee_rate)
-    }
-
-    // 刊登房源 - 需要 API 簽名驗證
+    /// 創建房源列表
+    /// 需要 API 簽名，驗證產權憑證後創建
     pub fn create_listing(
         ctx: Context<CreateListing>,
-        address: String,
+        address: [u8; 64],
         building_area: u32,
-        use_type: String,
         rent: u64,
         deposit: u64,
-        grace_days: u8,
-        metadata_uri: String,
+        metadata_uri: [u8; 46],
     ) -> Result<()> {
-        instructions::create_listing(
-            ctx,
-            address,
-            building_area,
-            use_type,
-            rent,
-            deposit,
-            grace_days,
-            metadata_uri,
-        )
+        instructions::create_listing(ctx, address, building_area, rent, deposit, metadata_uri)
     }
 
-    // 更新房源資訊
-    pub fn update_listing(
-        ctx: Context<UpdateListing>,
-        rent: u64,
-        deposit: u64,
-        grace_days: u8,
-        metadata_uri: String,
-    ) -> Result<()> {
-        instructions::update_listing(ctx, rent, deposit, grace_days, metadata_uri)
-    }
-
-    // 上架/下架房源切換
+    /// 切換房源狀態
+    /// 在可用和下架之間切換
     pub fn toggle_listing(ctx: Context<ToggleListing>) -> Result<()> {
         instructions::toggle_listing(ctx)
     }
 
-    // 申請租賃
-    pub fn apply_lease(ctx: Context<ApplyLease>, message: String) -> Result<()> {
-        instructions::apply_lease(ctx, message)
+    /// 申請租賃
+    /// 提交租賃申請和相關資料
+    pub fn apply_lease(ctx: Context<ApplyLease>, message_uri: [u8; 46]) -> Result<()> {
+        instructions::apply_lease(ctx, message_uri)
     }
 
-    // 核准申請
-    pub fn approve_application(ctx: Context<ApproveApplication>) -> Result<()> {
-        instructions::approve_application(ctx)
+    /// 核准申請
+    /// 房東核准特定申請人
+    pub fn approve_application(ctx: Context<ApproveApplication>, applicant: Pubkey) -> Result<()> {
+        instructions::approve_application(ctx, applicant)
     }
 
-    // 拒絕申請
-    pub fn reject_application(ctx: Context<RejectApplication>) -> Result<()> {
-        instructions::reject_application(ctx)
-    }
-
-    // 簽署租約 - 需要 API 簽名驗證
-    pub fn sign_lease(
-        ctx: Context<SignLease>,
+    /// 創建租約
+    /// 房東發起租約，設定條款
+    pub fn create_lease(
+        ctx: Context<CreateLease>,
+        applicant: Pubkey,
         start_date: i64,
         end_date: i64,
         payment_day: u8,
-        total_payments: u32,
+        contract_uri: [u8; 46],
     ) -> Result<()> {
-        instructions::sign_lease(ctx, start_date, end_date, payment_day, total_payments)
+        instructions::create_lease(ctx, applicant, start_date, end_date, payment_day, contract_uri)
     }
 
-    // 支付租金
-    pub fn pay_rent(ctx: Context<PayRent>, payment_index: u32, next_due_date: i64) -> Result<()> {
-        instructions::pay_rent(ctx, payment_index, next_due_date)
+    /// 簽署租約
+    /// 承租人簽署並支付押金和首期租金
+    pub fn sign_lease(ctx: Context<SignLease>) -> Result<()> {
+        instructions::sign_lease(ctx)
     }
 
-    // 終止租約
-    pub fn terminate_lease(ctx: Context<TerminateLease>, reason: u8) -> Result<()> {
-        instructions::terminate_lease(ctx, reason)
+    /// 支付租金
+    /// 每月定期支付租金
+    pub fn pay_rent(ctx: Context<PayRent>) -> Result<()> {
+        instructions::pay_rent(ctx)
     }
 
-    // 房東發起結算請求
-    pub fn request_settle(
-        ctx: Context<RequestSettle>,
-        total_deductions: u64,
-        deduction_count: u8,
-    ) -> Result<()> {
-        instructions::request_settle(ctx, total_deductions, deduction_count)
-    }
-
-    // 承租人確認結算
-    pub fn confirm_settle(ctx: Context<ConfirmSettle>) -> Result<()> {
-        instructions::confirm_settle(ctx)
-    }
-
-    // 仲裁者強制結算
-    pub fn force_settle(ctx: Context<ForceSettle>) -> Result<()> {
-        instructions::force_settle(ctx)
-    }
-
-    // 創建爭議
-    pub fn create_dispute(ctx: Context<CreateDispute>, reason: u8) -> Result<()> {
-        instructions::create_dispute(ctx, reason)
-    }
-
-    // 解決爭議
-    pub fn resolve_dispute(
-        ctx: Context<ResolveDispute>,
-        dispute_id: u32,
-        resolution: String,
+    /// 發起押金結算
+    /// 任一方發起押金分配方案
+    pub fn initiate_release(
+        ctx: Context<InitiateRelease>,
         landlord_amount: u64,
         tenant_amount: u64,
     ) -> Result<()> {
-        instructions::resolve_dispute(ctx, dispute_id, resolution, landlord_amount, tenant_amount)
+        instructions::initiate_release(ctx, landlord_amount, tenant_amount)
     }
 
-    // 關閉已處理的申請
-    pub fn close_application(ctx: Context<CloseApplication>) -> Result<()> {
-        instructions::close_application(ctx)
+    /// 確認押金結算
+    /// 另一方確認押金分配
+    pub fn confirm_release(ctx: Context<ConfirmRelease>) -> Result<()> {
+        instructions::confirm_release(ctx)
     }
 
-    // 關閉已結算的押金託管
-    pub fn close_escrow(ctx: Context<CloseEscrow>) -> Result<()> {
-        instructions::close_escrow(ctx)
+    /// 發起爭議
+    /// 對押金分配有異議時發起
+    pub fn raise_dispute(ctx: Context<RaiseDispute>, reason: u8) -> Result<()> {
+        instructions::raise_dispute(ctx, reason)
     }
 
-    // 申請自動過期
-    pub fn expire_application(ctx: Context<ExpireApplication>) -> Result<()> {
-        instructions::expire_application(ctx)
+    /// 解決爭議
+    /// 仲裁者裁決押金分配
+    pub fn resolve_dispute(
+        ctx: Context<ResolveDispute>,
+        landlord_amount: u64,
+        tenant_amount: u64,
+    ) -> Result<()> {
+        instructions::resolve_dispute(ctx, landlord_amount, tenant_amount)
     }
 }

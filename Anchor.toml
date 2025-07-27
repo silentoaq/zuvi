@@ -8,6 +8,9 @@ skip-lint = false
 [programs.localnet]
 zuvi = "2Mipufx8cUUVUD5bqZjGK2yFWvjVM4jBaKVmw9zD5hzP"
 
+[programs.devnet]
+zuvi = "2Mipufx8cUUVUD5bqZjGK2yFWvjVM4jBaKVmw9zD5hzP"
+
 [registry]
 url = "https://api.apr.dev"
 

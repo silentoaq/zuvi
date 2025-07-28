@@ -13,11 +13,11 @@ const router = Router();
 // 創建房源
 router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
   try {
-    const { propertyAttest, rent, deposit, metadata } = req.body;
+    const { propertyAttest, credentialId, rent, deposit, metadata } = req.body;
     const userPublicKey = new PublicKey(req.user!.publicKey);
 
     // 驗證參數
-    if (!propertyAttest || !rent || !deposit || !metadata) {
+    if (!propertyAttest || !credentialId || !rent || !deposit || !metadata) {
       throw new ApiError(400, 'Missing required fields');
     }
 
@@ -26,19 +26,15 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
       throw new ApiError(400, 'Deposit must be between 1-3 months rent');
     }
 
-    // 驗證產權憑證並取得揭露資料
-    const credential = await CredentialService.verifyPropertyCredential(
-      req.user!.did,
-      ['address', 'buildingArea', 'use']
-    );
-
-    if (!credential.verified) {
-      throw new ApiError(403, 'Property credential verification failed');
+    // 獲取緩存的揭露結果
+    const disclosure = CredentialService.getCachedDisclosure(req.user!.publicKey, credentialId);
+    if (!disclosure || !disclosure.success) {
+      throw new ApiError(400, 'Please complete property disclosure first');
     }
 
-    // 檢查用途必須是住宅
-    if (credential.data.use !== '住宅') {
-      throw new ApiError(400, 'Property must be residential');
+    // 驗證揭露資料
+    if (!disclosure.data?.address || !disclosure.data?.buildingArea || disclosure.data?.use !== '住宅') {
+      throw new ApiError(400, 'Invalid disclosure data');
     }
 
     // 上傳 metadata 到 IPFS
@@ -46,7 +42,7 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
     
     // 準備鏈上資料
     const addressBytes = Buffer.alloc(64);
-    addressBytes.write(credential.data.address);
+    addressBytes.write(disclosure.data.address);
     
     const propertyAttestPubkey = new PublicKey(propertyAttest);
     const [listingPda] = derivePDAs.listing(propertyAttestPubkey);
@@ -56,7 +52,7 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
     const tx = await program.methods
       .createListing(
         Array.from(addressBytes),
-        credential.data.buildingArea,
+        disclosure.data.buildingArea,
         new BN(rent),
         new BN(deposit),
         StorageService.ipfsHashToBytes(ipfsResult.ipfsHash)
@@ -85,7 +81,12 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
       transaction: serialized.toString('base64'),
       listing: listingPda.toString(),
       ipfsHash: ipfsResult.ipfsHash,
-      gatewayUrl: ipfsResult.gatewayUrl
+      gatewayUrl: ipfsResult.gatewayUrl,
+      disclosedData: {
+        address: disclosure.data.address,
+        buildingArea: disclosure.data.buildingArea,
+        use: disclosure.data.use
+      }
     });
     return;
   } catch (error) {
@@ -156,7 +157,7 @@ router.get('/', async (req, res, next): Promise<void> => {
       }
     };
 
-    cache.set(cacheKey, result, 300); // 緩存5分鐘
+    cache.set(cacheKey, result, 300);
     res.json(result);
     return;
   } catch (error) {
@@ -235,12 +236,12 @@ router.post('/:publicKey/toggle', requirePropertyCredential, async (req: AuthReq
 
     // 清除緩存
     cache.del(`listing:${publicKey}`);
-    cache.flushAll(); // 清除列表緩存
+    cache.flushAll();
 
     res.json({
       success: true,
       transaction: serialized.toString('base64'),
-      newStatus: listing.status === 0 ? 2 : 0 // 0->2 或 2->0
+      newStatus: listing.status === 0 ? 2 : 0
     });
     return;
   } catch (error) {

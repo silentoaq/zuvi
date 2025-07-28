@@ -3,12 +3,12 @@ import { PublicKey, SystemProgram } from '@solana/web3.js';
 import { program, derivePDAs } from '../config/solana';
 import { StorageService } from '../services/storage';
 import { ApiError } from '../middleware/errorHandler';
-import { AuthRequest, requireCitizenCredential } from '../middleware/auth';
+import { AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
 // 申請租賃
-router.post('/apply', requireCitizenCredential, async (req: AuthRequest, res, next) => {
+router.post('/apply', async (req: AuthRequest, res, next) => {
   try {
     const { listing, tenantAttest, message } = req.body;
     const userPublicKey = new PublicKey(req.user!.publicKey);
@@ -80,7 +80,7 @@ router.get('/listing/:listing', async (req: AuthRequest, res, next) => {
     const applications = await program.account.application.all([
       {
         memcmp: {
-          offset: 8, // discriminator 後
+          offset: 8,
           bytes: listingPubkey.toBase58()
         }
       }
@@ -121,7 +121,7 @@ router.get('/my', async (req: AuthRequest, res, next) => {
     const applications = await program.account.application.all([
       {
         memcmp: {
-          offset: 8 + 32, // discriminator + listing
+          offset: 8 + 32,
           bytes: userPublicKey.toBase58()
         }
       }

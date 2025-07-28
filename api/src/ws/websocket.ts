@@ -5,7 +5,6 @@ import { connection, program } from '../config/solana';
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: string;
-  userType?: 'landlord' | 'tenant';
   isAlive?: boolean;
 }
 
@@ -80,14 +79,12 @@ function handleAuth(ws: AuthenticatedWebSocket, token: string) {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
     ws.userId = decoded.publicKey;
-    ws.userType = decoded.type;
     
     clients.set(ws.userId!, ws);
     
     ws.send(JSON.stringify({
       type: 'auth_success',
-      userId: ws.userId,
-      userType: ws.userType
+      userId: ws.userId
     }));
   } catch (error) {
     ws.send(JSON.stringify({
@@ -123,7 +120,6 @@ async function handleSubscribe(ws: AuthenticatedWebSocket, data: any) {
 }
 
 function handleUnsubscribe(ws: AuthenticatedWebSocket, data: any) {
-  // 實作取消訂閱邏輯
   ws.send(JSON.stringify({
     type: 'unsubscribed',
     resource: data.resource,
@@ -156,7 +152,6 @@ function subscribeListing(ws: AuthenticatedWebSocket, listingId: string) {
       }
     );
 
-    // 儲存訂閱 ID 以便後續取消
     ws.send(JSON.stringify({
       type: 'subscribed',
       resource: 'listing',

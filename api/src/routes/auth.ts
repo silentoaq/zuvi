@@ -1,14 +1,13 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
-import { CredentialService } from '../services/credential';
 import { ApiError } from '../middleware/errorHandler';
 import { validatePublicKey, verifySignature } from '../middleware/auth';
+import { CredentialService } from '../services/credential';
 
 const router = Router();
 
 interface LoginRequest {
   publicKey: string;
-  did: string;
   signature: string;
   message: string;
 }
@@ -16,9 +15,9 @@ interface LoginRequest {
 // Web3 錢包認證
 router.post('/login', async (req, res, next) => {
   try {
-    const { publicKey, did, signature, message } = req.body as LoginRequest;
+    const { publicKey, signature, message } = req.body as LoginRequest;
 
-    if (!publicKey || !did || !signature || !message) {
+    if (!publicKey || !signature || !message) {
       throw new ApiError(400, 'Missing required fields');
     }
 
@@ -40,33 +39,19 @@ router.post('/login', async (req, res, next) => {
       throw new ApiError(401, 'Message expired');
     }
 
-    // 檢查憑證（不阻擋登入，只是獲取狀態）
-    const credentials = {
-      hasPropertyCredential: false,
-      hasCitizenCredential: false,
-      propertyCount: 0
-    };
-
+    // 獲取完整憑證狀態
+    let credentialStatus = null;
     try {
-      const propertyStatus = await CredentialService.verifyPropertyCredential(did, []);
-      credentials.hasPropertyCredential = true;
-      credentials.propertyCount = propertyStatus.attestations ? propertyStatus.attestations.length : 0;
+      credentialStatus = await CredentialService.getCredentialStatus(publicKey);
     } catch (error) {
-      // 沒有產權憑證，繼續
+      // 獲取失敗不影響登錄
+      console.error('Failed to get credential status:', error);
     }
 
-    try {
-      await CredentialService.verifyCitizenCredential(did, []);
-      credentials.hasCitizenCredential = true;
-    } catch (error) {
-      // 沒有自然人憑證，繼續
-    }
-
-    // 生成 JWT（不要求憑證）
+    // 生成 JWT
     const token = jwt.sign(
       {
-        publicKey,
-        did
+        publicKey
       },
       process.env.JWT_SECRET!,
       { expiresIn: '7d' }
@@ -77,8 +62,7 @@ router.post('/login', async (req, res, next) => {
       token,
       user: {
         publicKey,
-        did,
-        credentials
+        credentialStatus
       }
     });
   } catch (error) {
@@ -98,30 +82,17 @@ router.get('/verify', async (req, res, next): Promise<void> => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
     
-    // 重新檢查憑證狀態
-    const credentials = {
-      hasPropertyCredential: false,
-      hasCitizenCredential: false,
-      propertyCount: 0
-    };
-
+    // 重新獲取憑證狀態
+    let credentialStatus = null;
     try {
-      const propertyStatus = await CredentialService.verifyPropertyCredential(decoded.did, []);
-      credentials.hasPropertyCredential = true;
-      credentials.propertyCount = propertyStatus.attestations ? propertyStatus.attestations.length : 0;
-    } catch {}
-
-    try {
-      await CredentialService.verifyCitizenCredential(decoded.did, []);
-      credentials.hasCitizenCredential = true;
+      credentialStatus = await CredentialService.getCredentialStatus(decoded.publicKey);
     } catch {}
     
     res.json({
       valid: true,
       user: {
         publicKey: decoded.publicKey,
-        did: decoded.did,
-        credentials
+        credentialStatus
       }
     });
     return;

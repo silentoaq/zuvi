@@ -9,7 +9,6 @@ import bs58 from 'bs58';
 export interface AuthRequest extends Request {
   user?: {
     publicKey: string;
-    did: string;
   };
 }
 
@@ -29,8 +28,7 @@ export const authenticateToken = (
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
     req.user = {
-      publicKey: decoded.publicKey,
-      did: decoded.did
+      publicKey: decoded.publicKey
     };
     next();
   } catch (error) {
@@ -51,21 +49,18 @@ export const requirePropertyCredential = async (
   }
 
   try {
-    const cacheKey = `hasProperty:${req.user.did}`;
+    const cacheKey = `hasProperty:${req.user.publicKey}`;
     let hasProperty = cache.get<boolean>(cacheKey);
 
     if (hasProperty === undefined) {
       try {
-        const status = await CredentialService.verifyPropertyCredential(
-          req.user.did,
-          []
-        );
-        hasProperty = status.verified;
+        const status = await CredentialService.getCredentialStatus(req.user.publicKey);
+        hasProperty = !!(status.twland?.exists && status.twland.count > 0);
       } catch (error) {
         hasProperty = false;
       }
       
-      cache.set(cacheKey, hasProperty, 600); // 緩存10分鐘
+      cache.set(cacheKey, hasProperty, 600);
     }
 
     if (!hasProperty) {
@@ -92,21 +87,18 @@ export const requireCitizenCredential = async (
   }
 
   try {
-    const cacheKey = `hasCitizen:${req.user.did}`;
+    const cacheKey = `hasCitizen:${req.user.publicKey}`;
     let hasCitizen = cache.get<boolean>(cacheKey);
 
     if (hasCitizen === undefined) {
       try {
-        const status = await CredentialService.verifyCitizenCredential(
-          req.user.did,
-          []
-        );
-        hasCitizen = status.verified;
+        const status = await CredentialService.getCredentialStatus(req.user.publicKey);
+        hasCitizen = !!(status.twfido?.exists);
       } catch (error) {
         hasCitizen = false;
       }
       
-      cache.set(cacheKey, hasCitizen, 600); // 緩存10分鐘
+      cache.set(cacheKey, hasCitizen, 600);
     }
 
     if (!hasCitizen) {

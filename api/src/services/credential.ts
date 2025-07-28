@@ -7,151 +7,123 @@ const sdk = new TwattestSDK({
   timeout: 30000
 });
 
-// 定義返回類型
-interface PropertyCredentialResult {
-  verified: boolean;
-  data: any;
-  attestations: Array<{
-    address: string;
-    data: {
-      merkleRoot: string;
-      credentialReference: string;
-    };
-    expiry: number;
-  }>;
+export interface AttestationData {
+  merkleRoot: string;
+  credentialReference: string;
 }
 
-interface CitizenCredentialResult {
-  verified: boolean;
-  data: any;
-  attestation: {
+export interface PropertyAttestation {
+  address: string;
+  data: AttestationData;
+  expiry: number;
+}
+
+export interface CitizenAttestation {
+  exists: boolean;
+  address: string;
+  data: AttestationData | null;
+  expiry: number | null;
+}
+
+export interface CredentialStatus {
+  twfido?: CitizenAttestation;
+  twland?: {
     exists: boolean;
-    address: string;
-    data: {
-      merkleRoot: string;
-      credentialReference: string;
-    } | null;
-    expiry: number | null;
+    attestations: PropertyAttestation[];
+    count: number;
   };
 }
 
+export interface DisclosureResult {
+  success: boolean;
+  data?: any;
+  credentialId?: string;
+  error?: string;
+}
+
 export class CredentialService {
-  // 驗證產權憑證並取得揭露資料
-  static async verifyPropertyCredential(
-    holderDid: string,
-    requiredFields: string[]
-  ): Promise<PropertyCredentialResult> {
-    const cacheKey = `property:${holderDid}:${requiredFields.join(',')}`;
-    const cached = cache.get<PropertyCredentialResult>(cacheKey);
+  // 獲取完整憑證狀態
+  static async getCredentialStatus(publicKey: string): Promise<CredentialStatus> {
+    const cacheKey = `credentialStatus:${publicKey}`;
+    const cached = cache.get<CredentialStatus>(cacheKey);
     if (cached) return cached;
 
     try {
-      // 檢查憑證狀態
-      const status = await sdk.getAttestationStatus(holderDid);
-      
-      if (!status.twland?.exists || status.twland.count === 0) {
-        throw new Error('No property credential found');
-      }
-
-      // 如果不需要揭露任何欄位，只返回驗證結果
-      if (requiredFields.length === 0) {
-        const result = {
-          verified: true,
-          data: {},
-          attestations: status.twland.attestations
-        };
-        cache.set(cacheKey, result, 3600);
-        return result;
-      }
-
-      // 創建揭露請求
-      const request = await sdk.createDisclosureRequest({
-        holderDid,
-        credentialType: 'PropertyCredential',
-        requiredFields,
-        purpose: '租房平台房源刊登驗證'
-      });
-
-      // 等待揭露完成
-      const disclosure = await sdk.waitForDisclosure(request.requestId, {
-        timeout: 300000,
-        pollInterval: 2000
-      });
-
-      if (disclosure.status !== 'completed') {
-        throw new Error('Disclosure not completed');
-      }
-
-      const result = {
-        verified: true,
-        data: disclosure.disclosedData,
-        attestations: status.twland.attestations
-      };
-
-      cache.set(cacheKey, result, 3600); // 緩存1小時
-      return result;
+      const status = await sdk.getAttestationStatus(publicKey);
+      cache.set(cacheKey, status, 3600);
+      return status;
     } catch (error) {
-      throw new Error(`Property credential verification failed: ${error}`);
+      throw new Error(`Failed to get credential status: ${error}`);
     }
   }
 
-  // 驗證自然人憑證
-  static async verifyCitizenCredential(
-    holderDid: string,
-    requiredFields: string[]
-  ): Promise<CitizenCredentialResult> {
-    const cacheKey = `citizen:${holderDid}:${requiredFields.join(',')}`;
-    const cached = cache.get<CitizenCredentialResult>(cacheKey);
-    if (cached) return cached;
-
+  // 創建產權憑證揭露請求
+  static async createPropertyDisclosure(
+    publicKey: string,
+    credentialId: string
+  ): Promise<{ vpRequestUri: string; requestId: string }> {
     try {
-      // 檢查憑證狀態
-      const status = await sdk.getAttestationStatus(holderDid);
-      
-      if (!status.twfido?.exists) {
-        throw new Error('No citizen credential found');
-      }
-
-      // 如果不需要揭露任何欄位，只返回驗證結果
-      if (requiredFields.length === 0) {
-        const result = {
-          verified: true,
-          data: {},
-          attestation: status.twfido
-        };
-        cache.set(cacheKey, result, 3600);
-        return result;
-      }
-
-      // 創建揭露請求
       const request = await sdk.createDisclosureRequest({
-        holderDid,
-        credentialType: 'CitizenCredential',
-        requiredFields,
-        purpose: '租房平台身份驗證'
+        holderDid: publicKey,
+        credentialType: 'PropertyCredential',
+        credentialId,
+        requiredFields: ['address', 'buildingArea', 'use'],
+        purpose: '租房平台房源刊登驗證'
       });
 
-      // 等待揭露完成
-      const disclosure = await sdk.waitForDisclosure(request.requestId, {
+      return {
+        vpRequestUri: request.vpRequestUri,
+        requestId: request.requestId
+      };
+    } catch (error) {
+      throw new Error(`Failed to create property disclosure: ${error}`);
+    }
+  }
+
+  // 等待並驗證揭露結果
+  static async waitForDisclosure(
+    publicKey: string,
+    requestId: string,
+    credentialId: string
+  ): Promise<DisclosureResult> {
+    try {
+      const disclosure = await sdk.waitForDisclosure(requestId, {
         timeout: 300000,
         pollInterval: 2000
       });
 
       if (disclosure.status !== 'completed') {
-        throw new Error('Disclosure not completed');
+        return { success: false, error: 'Disclosure not completed' };
+      }
+
+      // 驗證揭露的用途必須是住宅
+      if (disclosure.disclosedData?.use !== '住宅') {
+        return { success: false, error: 'Property must be residential' };
       }
 
       const result = {
-        verified: true,
+        success: true,
         data: disclosure.disclosedData,
-        attestation: status.twfido
+        credentialId
       };
 
-      cache.set(cacheKey, result, 3600); // 緩存1小時
+      // 緩存揭露結果
+      const cacheKey = `disclosure:${publicKey}:${credentialId}`;
+      cache.set(cacheKey, result, 600);
+
       return result;
     } catch (error) {
-      throw new Error(`Citizen credential verification failed: ${error}`);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      };
     }
+  }
+
+  // 獲取緩存的揭露結果
+  static getCachedDisclosure(publicKey: string, credentialId: string): DisclosureResult | null {
+    const cacheKey = `disclosure:${publicKey}:${credentialId}`;
+    return cache.get<DisclosureResult>(cacheKey) || null;
   }
 
   // 生成 QR Code URL

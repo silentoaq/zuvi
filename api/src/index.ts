@@ -1,8 +1,12 @@
+import dotenv from 'dotenv';
+dotenv.config();
+import { initSolana } from './config/solana';
+initSolana();
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import NodeCache from 'node-cache';
@@ -16,8 +20,6 @@ import { disputeRouter } from './routes/dispute';
 import { setupWebSocket } from './ws/websocket';
 import { errorHandler } from './middleware/errorHandler';
 import { authenticateToken } from './middleware/auth';
-
-dotenv.config();
 
 const app = express();
 const server = createServer(app);

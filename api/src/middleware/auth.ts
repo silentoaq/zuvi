@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import { PublicKey } from '@solana/web3.js';
 import { CredentialService } from '../services/credential';
 import { cache } from '../index';
+import nacl from 'tweetnacl';
+import bs58 from 'bs58';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -138,11 +140,9 @@ export const verifySignature = async (
   try {
     const pubKey = new PublicKey(publicKey);
     const messageBytes = new TextEncoder().encode(message);
-    const signatureBytes = Buffer.from(signature, 'base64');
+    const signatureBytes = bs58.decode(signature);
 
-    // 使用 @solana/web3.js 的 nacl 驗證
-    const { sign } = await import('tweetnacl');
-    return sign.detached.verify(
+    return nacl.sign.detached.verify(
       messageBytes,
       signatureBytes,
       pubKey.toBytes()

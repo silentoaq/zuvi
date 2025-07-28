@@ -6,20 +6,18 @@ import { validatePublicKey, verifySignature } from '../middleware/auth';
 
 const router = Router();
 
-// 登入介面
 interface LoginRequest {
   publicKey: string;
   did: string;
-  signature: string; // 簽名訊息證明擁有私鑰
-  message: string;   // 被簽名的訊息
+  signature: string;
+  message: string;
 }
 
-// 統一登入接口
+// Web3 錢包認證
 router.post('/login', async (req, res, next) => {
   try {
     const { publicKey, did, signature, message } = req.body as LoginRequest;
 
-    // 驗證參數
     if (!publicKey || !did || !signature || !message) {
       throw new ApiError(400, 'Missing required fields');
     }
@@ -28,7 +26,7 @@ router.post('/login', async (req, res, next) => {
       throw new ApiError(400, 'Invalid public key');
     }
 
-    // 驗證簽名
+    // 驗證錢包簽名
     const isValidSignature = await verifySignature(publicKey, message, signature);
     if (!isValidSignature) {
       throw new ApiError(401, 'Invalid signature');
@@ -42,36 +40,29 @@ router.post('/login', async (req, res, next) => {
       throw new ApiError(401, 'Message expired');
     }
 
-    // 檢查用戶擁有的憑證
+    // 檢查憑證（不阻擋登入，只是獲取狀態）
     const credentials = {
       hasPropertyCredential: false,
       hasCitizenCredential: false,
       propertyCount: 0
     };
 
-    // 檢查產權憑證
     try {
       const propertyStatus = await CredentialService.verifyPropertyCredential(did, []);
       credentials.hasPropertyCredential = true;
       credentials.propertyCount = propertyStatus.attestations ? propertyStatus.attestations.length : 0;
     } catch (error) {
-      // 沒有產權憑證也沒關係
+      // 沒有產權憑證，繼續
     }
 
-    // 檢查自然人憑證
     try {
       await CredentialService.verifyCitizenCredential(did, []);
       credentials.hasCitizenCredential = true;
     } catch (error) {
-      // 沒有自然人憑證
+      // 沒有自然人憑證，繼續
     }
 
-    // 至少要有一種憑證
-    if (!credentials.hasPropertyCredential && !credentials.hasCitizenCredential) {
-      throw new ApiError(403, 'No valid credentials found');
-    }
-
-    // 生成 JWT
+    // 生成 JWT（不要求憑證）
     const token = jwt.sign(
       {
         publicKey,
@@ -144,7 +135,7 @@ router.get('/verify', async (req, res, next): Promise<void> => {
   }
 });
 
-// 生成登入訊息供錢包簽名
+// 生成錢包簽名訊息
 router.post('/message', async (req, res, next) => {
   try {
     const { publicKey } = req.body;
@@ -154,7 +145,7 @@ router.post('/message', async (req, res, next) => {
     }
 
     const message = JSON.stringify({
-      action: 'Login to Zuvi',
+      action: 'Connect to Zuvi',
       publicKey,
       timestamp: Date.now(),
       nonce: Math.random().toString(36).substring(7)

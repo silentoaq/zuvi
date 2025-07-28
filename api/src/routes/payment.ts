@@ -5,6 +5,7 @@ import { program, derivePDAs, USDC_MINT } from '../config/solana';
 import { ApiError } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
 import { BN } from '@coral-xyz/anchor';
+import { broadcastToUser } from '../ws/websocket';
 
 const router = Router();
 
@@ -61,6 +62,16 @@ router.post('/rent/:lease', async (req: AuthRequest, res, next) => {
     const serialized = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false
+    });
+
+    // 通知房東收到租金
+    broadcastToUser(leaseAccount.landlord.toString(), {
+      type: 'rent_paid',
+      lease: lease,
+      tenant: userPublicKey.toString(),
+      amount: leaseAccount.rent.toString(),
+      month: paidMonths + 1,
+      message: `收到第 ${paidMonths + 1} 個月租金`
     });
 
     res.json({
@@ -120,6 +131,19 @@ router.post('/deposit/:lease/release', async (req: AuthRequest, res, next) => {
       verifySignatures: false
     });
 
+    // 通知另一方
+    const isLandlord = leaseAccount.landlord.equals(userPublicKey);
+    const otherParty = isLandlord ? leaseAccount.tenant : leaseAccount.landlord;
+    
+    broadcastToUser(otherParty.toString(), {
+      type: 'deposit_release_initiated',
+      lease: lease,
+      initiator: userPublicKey.toString(),
+      landlordAmount: landlordAmount.toString(),
+      tenantAmount: tenantAmount.toString(),
+      message: `${isLandlord ? '房東' : '承租人'}發起押金結算，請確認分配方案`
+    });
+
     res.json({
       success: true,
       transaction: serialized.toString('base64'),
@@ -172,6 +196,16 @@ router.post('/deposit/:lease/confirm', async (req: AuthRequest, res, next) => {
     const serialized = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false
+    });
+
+    // 通知雙方押金已釋放
+    const isLandlord = leaseAccount.landlord.equals(userPublicKey);
+    const otherParty = isLandlord ? leaseAccount.tenant : leaseAccount.landlord;
+    
+    broadcastToUser(otherParty.toString(), {
+      type: 'deposit_released',
+      lease: lease,
+      message: '押金已成功釋放'
     });
 
     res.json({

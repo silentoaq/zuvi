@@ -4,6 +4,7 @@ import { program, derivePDAs } from '../config/solana';
 import { StorageService } from '../services/storage';
 import { ApiError } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
+import { broadcastToUser } from '../ws/websocket';
 
 const router = Router();
 
@@ -191,6 +192,14 @@ router.post('/:listing/approve/:applicant', async (req: AuthRequest, res, next) 
     const serialized = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false
+    });
+
+    // 通知承租人申請已核准
+    broadcastToUser(applicant, {
+      type: 'application_approved',
+      listing: listing,
+      landlord: userPublicKey.toString(),
+      message: '您的租賃申請已被核准'
     });
 
     res.json({

@@ -5,6 +5,7 @@ import { program, derivePDAs, USDC_MINT } from '../config/solana';
 import { ApiError } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
 import { BN } from '@coral-xyz/anchor';
+import { broadcastToUser } from '../ws/websocket';
 
 const router = Router();
 
@@ -49,6 +50,32 @@ router.post('/raise', async (req: AuthRequest, res, next) => {
     const serialized = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false
+    });
+
+    // 通知另一方和仲裁者
+    const isLandlord = leaseAccount.landlord.equals(userPublicKey);
+    const otherParty = isLandlord ? leaseAccount.tenant : leaseAccount.landlord;
+    
+    broadcastToUser(otherParty.toString(), {
+      type: 'dispute_raised',
+      lease: lease,
+      dispute: disputePda.toString(),
+      initiator: userPublicKey.toString(),
+      reason,
+      message: `${isLandlord ? '房東' : '承租人'}發起了爭議`
+    });
+
+    // 通知仲裁者
+    const [configPda] = derivePDAs.config();
+    const config = await program.account.config.fetch(configPda);
+    
+    broadcastToUser(config.arbitrator.toString(), {
+      type: 'new_dispute',
+      lease: lease,
+      dispute: disputePda.toString(),
+      initiator: userPublicKey.toString(),
+      reason,
+      message: '有新的爭議需要處理'
     });
 
     res.json({
@@ -120,6 +147,25 @@ router.post('/:dispute/resolve', async (req: AuthRequest, res, next) => {
     const serialized = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false
+    });
+
+    // 通知雙方爭議已解決
+    broadcastToUser(leaseAccount.landlord.toString(), {
+      type: 'dispute_resolved',
+      lease: leasePubkey.toString(),
+      dispute: dispute,
+      landlordAmount: landlordAmount.toString(),
+      tenantAmount: tenantAmount.toString(),
+      message: '爭議已由仲裁者解決，押金已釋放'
+    });
+
+    broadcastToUser(leaseAccount.tenant.toString(), {
+      type: 'dispute_resolved',
+      lease: leasePubkey.toString(),
+      dispute: dispute,
+      landlordAmount: landlordAmount.toString(),
+      tenantAmount: tenantAmount.toString(),
+      message: '爭議已由仲裁者解決，押金已釋放'
     });
 
     res.json({

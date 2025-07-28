@@ -6,6 +6,7 @@ import { StorageService } from '../services/storage';
 import { ApiError } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
 import { BN, ProgramAccount } from '@coral-xyz/anchor';
+import { broadcastToUser } from '../ws/websocket';
 
 const router = Router();
 
@@ -71,6 +72,15 @@ router.post('/create', async (req: AuthRequest, res, next) => {
       verifySignatures: false
     });
 
+    // 通知承租人租約已創建
+    broadcastToUser(applicant, {
+      type: 'lease_created',
+      listing: listing,
+      lease: leasePda.toString(),
+      landlord: userPublicKey.toString(),
+      message: '房東已創建租約，請查看並簽署'
+    });
+
     res.json({
       success: true,
       transaction: serialized.toString('base64'),
@@ -129,6 +139,14 @@ router.post('/:lease/sign', async (req: AuthRequest, res, next) => {
     const serialized = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false
+    });
+
+    // 通知房東租約已簽署
+    broadcastToUser(leaseAccount.landlord.toString(), {
+      type: 'lease_signed',
+      lease: lease,
+      tenant: userPublicKey.toString(),
+      message: '承租人已簽署租約並支付押金和首期租金'
     });
 
     res.json({

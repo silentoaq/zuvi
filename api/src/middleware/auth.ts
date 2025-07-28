@@ -1,0 +1,154 @@
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import { PublicKey } from '@solana/web3.js';
+import { CredentialService } from '../services/credential';
+import { cache } from '../index';
+
+export interface AuthRequest extends Request {
+  user?: {
+    publicKey: string;
+    did: string;
+  };
+}
+
+export const authenticateToken = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): void => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    res.status(401).json({ error: 'Access token required' });
+    return;
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
+    req.user = {
+      publicKey: decoded.publicKey,
+      did: decoded.did
+    };
+    next();
+  } catch (error) {
+    res.status(403).json({ error: 'Invalid or expired token' });
+    return;
+  }
+};
+
+// 驗證是否有產權憑證（創建房源用）
+export const requirePropertyCredential = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Authentication required' });
+    return;
+  }
+
+  try {
+    const cacheKey = `hasProperty:${req.user.did}`;
+    let hasProperty = cache.get<boolean>(cacheKey);
+
+    if (hasProperty === undefined) {
+      try {
+        const status = await CredentialService.verifyPropertyCredential(
+          req.user.did,
+          []
+        );
+        hasProperty = status.verified;
+      } catch (error) {
+        hasProperty = false;
+      }
+      
+      cache.set(cacheKey, hasProperty, 600); // 緩存10分鐘
+    }
+
+    if (!hasProperty) {
+      res.status(403).json({ error: 'Property credential required' });
+      return;
+    }
+
+    next();
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to verify credentials' });
+    return;
+  }
+};
+
+// 驗證是否有自然人憑證（申請租賃用）
+export const requireCitizenCredential = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Authentication required' });
+    return;
+  }
+
+  try {
+    const cacheKey = `hasCitizen:${req.user.did}`;
+    let hasCitizen = cache.get<boolean>(cacheKey);
+
+    if (hasCitizen === undefined) {
+      try {
+        const status = await CredentialService.verifyCitizenCredential(
+          req.user.did,
+          []
+        );
+        hasCitizen = status.verified;
+      } catch (error) {
+        hasCitizen = false;
+      }
+      
+      cache.set(cacheKey, hasCitizen, 600); // 緩存10分鐘
+    }
+
+    if (!hasCitizen) {
+      res.status(403).json({ error: 'Citizen credential required' });
+      return;
+    }
+
+    next();
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to verify credentials' });
+    return;
+  }
+};
+
+// 驗證公鑰格式
+export const validatePublicKey = (publicKey: string): boolean => {
+  try {
+    new PublicKey(publicKey);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// 驗證 Solana 錢包簽名
+export const verifySignature = async (
+  publicKey: string,
+  message: string,
+  signature: string
+): Promise<boolean> => {
+  try {
+    const pubKey = new PublicKey(publicKey);
+    const messageBytes = new TextEncoder().encode(message);
+    const signatureBytes = Buffer.from(signature, 'base64');
+
+    // 使用 @solana/web3.js 的 nacl 驗證
+    const { sign } = await import('tweetnacl');
+    return sign.detached.verify(
+      messageBytes,
+      signatureBytes,
+      pubKey.toBytes()
+    );
+  } catch (error) {
+    console.error('Signature verification error:', error);
+    return false;
+  }
+};

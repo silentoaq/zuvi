@@ -33,7 +33,7 @@ router.post('/apply', async (req: AuthRequest, res, next) => {
     }
 
     // 上傳申請資料到 IPFS
-    const ipfsResult = await StorageService.uploadJSON(message, 'application');
+    const ipfsResult = await StorageService.uploadJSON(message, 'apply', req.user!.publicKey);
     
     const [applicationPda] = derivePDAs.application(listingPubkey, userPublicKey);
 
@@ -47,6 +47,11 @@ router.post('/apply', async (req: AuthRequest, res, next) => {
         systemProgram: SystemProgram.programId,
       })
       .transaction();
+
+    // 設置 recentBlockhash
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
 
     const serialized = tx.serialize({
       requireAllSignatures: false,
@@ -188,6 +193,11 @@ router.post('/:listing/approve/:applicant', async (req: AuthRequest, res, next) 
         owner: userPublicKey,
       })
       .transaction();
+
+    // 設置 recentBlockhash
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
 
     const serialized = tx.serialize({
       requireAllSignatures: false,

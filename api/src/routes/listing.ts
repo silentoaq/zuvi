@@ -36,7 +36,8 @@ router.post('/upload-images', requirePropertyCredential, upload.array('images', 
     }
 
     const uploadPromises = files.map(async (file, index) => {
-      const filename = `listing_${req.user!.publicKey}_${Date.now()}_${index}.${file.mimetype.split('/')[1]}`;
+      const shortPubkey = req.user!.publicKey.slice(0, 4) + req.user!.publicKey.slice(-4);
+      const filename = `img_${shortPubkey}_${Date.now()}_${index}.${file.mimetype.split('/')[1]}`;
       
       const result = await StorageService.uploadFile(
         file.buffer,
@@ -156,8 +157,21 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
     }
 
     // 獲取緩存的揭露結果
+    console.log('Checking disclosure cache:', {
+      publicKey: req.user!.publicKey,
+      credentialId,
+      cacheKey: `disclosure:${req.user!.publicKey}:${credentialId}`
+    });
+    
     const disclosure = CredentialService.getCachedDisclosure(req.user!.publicKey, credentialId);
+    console.log('Disclosure result:', disclosure);
+    
     if (!disclosure || !disclosure.success) {
+      // 列出所有相關的緩存 key
+      const keys = cache.keys();
+      const relevantKeys = keys.filter(k => k.startsWith(`disclosure:${req.user!.publicKey}:`));
+      console.log('Available disclosure cache keys:', relevantKeys);
+      
       throw new ApiError(400, 'Please complete property disclosure first');
     }
 
@@ -198,7 +212,7 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
     };
 
     // 上傳 metadata 到 IPFS
-    const ipfsResult = await StorageService.uploadJSON(finalMetadata, 'listing');
+    const ipfsResult = await StorageService.uploadJSON(finalMetadata, 'listing', req.user!.publicKey);
     
     // 準備鏈上資料
     const addressBytes = Buffer.alloc(64);
@@ -226,6 +240,11 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
         systemProgram: SystemProgram.programId,
       })
       .transaction();
+
+    // 設置 recentBlockhash
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
 
     // API 簽名交易
     tx.partialSign(apiSignerWallet.payer);
@@ -396,6 +415,11 @@ router.post('/:publicKey/toggle', requirePropertyCredential, async (req: AuthReq
         owner: userPublicKey,
       })
       .transaction();
+
+    // 設置 recentBlockhash
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
 
     const serialized = tx.serialize({
       requireAllSignatures: false,

@@ -30,12 +30,19 @@ router.post('/rent/:lease', async (req: AuthRequest, res, next) => {
     // 檢查是否需要支付
     const now = Math.floor(Date.now() / 1000);
     const startDate = leaseAccount.startDate.toNumber();
+    const endDate = leaseAccount.endDate.toNumber();
     const paidMonths = leaseAccount.paidMonths;
 
-    // 計算當前應該支付到第幾個月
-    const monthsSinceStart = Math.floor((now - startDate) / (30 * 86400));
-    if (paidMonths > monthsSinceStart) {
-      throw new ApiError(400, 'Payment not due yet');
+    // 計算租期總月數
+    const totalMonths = Math.ceil((endDate - startDate) / (30 * 86400));
+    
+    // 簡化檢查：只要還沒付完且租約還在期限內就可以付
+    if (paidMonths >= totalMonths) {
+      throw new ApiError(400, 'All rent has been paid');
+    }
+    
+    if (now > endDate) {
+      throw new ApiError(400, 'Lease has ended');
     }
 
     const [configPda] = derivePDAs.config();
@@ -58,6 +65,11 @@ router.post('/rent/:lease', async (req: AuthRequest, res, next) => {
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .transaction();
+
+    // 設置 recentBlockhash
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
 
     const serialized = tx.serialize({
       requireAllSignatures: false,
@@ -126,6 +138,11 @@ router.post('/deposit/:lease/release', async (req: AuthRequest, res, next) => {
       })
       .transaction();
 
+    // 設置 recentBlockhash
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
+
     const serialized = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false
@@ -193,6 +210,11 @@ router.post('/deposit/:lease/confirm', async (req: AuthRequest, res, next) => {
       })
       .transaction();
 
+    // 設置 recentBlockhash
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
+
     const serialized = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false
@@ -235,30 +257,49 @@ router.get('/history/:lease', async (req: AuthRequest, res, next) => {
     // 計算支付記錄
     const payments = [];
     const startDate = leaseAccount.startDate.toNumber();
+    const endDate = leaseAccount.endDate.toNumber();
     const rent = leaseAccount.rent.toString();
     const paidMonths = leaseAccount.paidMonths;
+    const paymentDay = leaseAccount.paymentDay;
+    const totalMonths = Math.ceil((endDate - startDate) / (30 * 86400));
 
+    // 使用實際的月份計算
+    const startDateObj = new Date(startDate * 1000);
+    
     for (let i = 0; i < paidMonths; i++) {
-      const monthDate = new Date((startDate + i * 30 * 86400) * 1000);
+      const paymentDate = new Date(startDateObj);
+      paymentDate.setMonth(startDateObj.getMonth() + i);
+      
+      // 設定為該月的繳費日
+      paymentDate.setDate(Math.min(paymentDay, new Date(paymentDate.getFullYear(), paymentDate.getMonth() + 1, 0).getDate()));
+      
       payments.push({
         month: i + 1,
         amount: rent,
-        date: monthDate.toISOString(),
+        date: paymentDate.toISOString(),
+        year: paymentDate.getFullYear(),
+        monthName: paymentDate.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long' }),
         status: 'paid'
       });
     }
 
     // 計算下次應付
     const now = Math.floor(Date.now() / 1000);
-    const monthsSinceStart = Math.floor((now - startDate) / (30 * 86400));
     let nextPayment = null;
 
-    if (paidMonths <= monthsSinceStart && leaseAccount.status === 0) {
-      const nextMonthDate = new Date((startDate + paidMonths * 30 * 86400) * 1000);
+    if (paidMonths < totalMonths && leaseAccount.status === 0 && now <= endDate) {
+      const nextPaymentDate = new Date(startDateObj);
+      nextPaymentDate.setMonth(startDateObj.getMonth() + paidMonths);
+      
+      // 設定為該月的繳費日
+      nextPaymentDate.setDate(Math.min(paymentDay, new Date(nextPaymentDate.getFullYear(), nextPaymentDate.getMonth() + 1, 0).getDate()));
+      
       nextPayment = {
         month: paidMonths + 1,
         amount: rent,
-        dueDate: nextMonthDate.toISOString(),
+        dueDate: nextPaymentDate.toISOString(),
+        year: nextPaymentDate.getFullYear(),
+        monthName: nextPaymentDate.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long' }),
         status: 'pending'
       };
     }
@@ -266,7 +307,11 @@ router.get('/history/:lease', async (req: AuthRequest, res, next) => {
     res.json({
       lease: lease,
       paidMonths: paidMonths,
+      totalMonths: totalMonths,
+      remainingMonths: totalMonths - paidMonths,
       totalPaid: new BN(rent).mul(new BN(paidMonths)).toString(),
+      totalRent: new BN(rent).mul(new BN(totalMonths)).toString(),
+      paymentDay: paymentDay,
       payments,
       nextPayment
     });

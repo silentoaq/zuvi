@@ -15,8 +15,9 @@ zuvi = "2Mipufx8cUUVUD5bqZjGK2yFWvjVM4jBaKVmw9zD5hzP"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/zuvi.ts"
+initialize = "yarn run ts-node tests/initialize.ts"

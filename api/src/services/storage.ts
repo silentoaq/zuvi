@@ -18,11 +18,15 @@ function getPinata(): PinataSDK {
 
 export class StorageService {
   // 上傳 JSON 到 IPFS
-  static async uploadJSON(data: any, name: string) {
+  static async uploadJSON(data: any, type: string, owner?: string) {
     try {
+      const timestamp = Date.now();
+      const shortOwner = owner ? owner.slice(0, 4) + owner.slice(-4) : 'anon';
+      const filename = `${type}_${shortOwner}_${timestamp}.json`;
+      
       const jsonString = JSON.stringify(data);
       const blob = new Blob([jsonString], { type: 'application/json' });
-      const file = new File([blob], `${name}.json`, { type: 'application/json' });
+      const file = new File([blob], filename, { type: 'application/json' });
       
       const result = await getPinata().upload.file(file);
       

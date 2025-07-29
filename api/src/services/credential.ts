@@ -132,6 +132,7 @@ export class CredentialService {
 
       // 緩存揭露結果
       const cacheKey = `disclosure:${publicKey}:${credentialId}`;
+      console.log('Setting cache with key:', cacheKey);
       cache.set(cacheKey, result, 600);
 
       return result;

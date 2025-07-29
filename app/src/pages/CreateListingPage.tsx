@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Separator } from '@/components/ui/separator'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,6 +14,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
+import { useWallet } from '@solana/wallet-adapter-react'
+import { Connection, Transaction } from '@solana/web3.js'
 
 interface PropertyCredential {
   address: string
@@ -79,6 +82,7 @@ const BILLING_OPTIONS = [
 
 export default function CreateListingPage() {
   const { user } = useAuthStore()
+  const { publicKey, signTransaction } = useWallet()
   
   const [selectedCredential, setSelectedCredential] = useState<PropertyCredential | null>(null)
   const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set())
@@ -88,6 +92,7 @@ export default function CreateListingPage() {
   const [disclosureStatus, setDisclosureStatus] = useState<DisclosureStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [publishing, setPublishing] = useState(false)
   
   const [formData, setFormData] = useState<ListingFormData>({
     title: '',
@@ -408,6 +413,102 @@ export default function CreateListingPage() {
     } else if (fromStep === 'publish') {
       setDisclosureStep('form')
     }
+  }
+
+  const handlePublish = async () => {
+    if (!selectedCredential || !disclosureStatus?.disclosedData || !publicKey || !signTransaction) {
+      toast.error('缺少必要資訊，請重新開始')
+      return
+    }
+
+    try {
+      setPublishing(true)
+
+      const metadata = {
+        version: '1.0',
+        basic: {
+          title: formData.title,
+          type: HOUSE_TYPES.find(t => t.value === formData.type)?.label || formData.type,
+          area: formData.area,
+          floor: formData.floor,
+          total_floors: formData.totalFloors
+        },
+        features: {
+          bedroom: formData.bedroom,
+          bathroom: formData.bathroom,
+          balcony: formData.balcony
+        },
+        facilities: formData.facilities,
+        rules: {
+          pet: formData.pet,
+          cooking: formData.cooking,
+          utilities: {
+            water: BILLING_OPTIONS.find(b => b.value === formData.waterBilling)?.label || formData.waterBilling,
+            electricity: BILLING_OPTIONS.find(b => b.value === formData.electricityBilling)?.label || formData.electricityBilling
+          }
+        },
+        description: formData.description,
+        media: {
+          images: formData.uploadedImages.map(img => img.ipfsHash),
+          primary_image: 0
+        }
+      }
+
+      const requestBody = {
+        propertyAttest: selectedCredential.address,
+        credentialId: selectedCredential.data.credentialReference,
+        rent: formData.rent * 1_000_000,
+        deposit: formData.deposit * 1_000_000,
+        metadata,
+        imageIds: formData.uploadedImages.map(img => img.id)
+      }
+
+      const response = await fetch('/api/listings/create', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to create listing')
+      }
+
+      const { transaction: serializedTx } = await response.json()
+      const connection = new Connection(process.env.NODE_ENV === 'development' 
+        ? 'https://api.devnet.solana.com' 
+        : 'https://api.mainnet-beta.solana.com'
+      )
+      
+      const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
+      const signedTx = await signTransaction(tx)
+      const signature = await connection.sendRawTransaction(signedTx.serialize())
+      
+      await connection.confirmTransaction(signature, 'confirmed')
+      
+      toast.success('房源發布成功！')
+      
+      setTimeout(() => {
+        window.location.href = '/'
+      }, 2000)
+
+    } catch (error) {
+      console.error('Error publishing listing:', error)
+      toast.error(error instanceof Error ? error.message : '發布失敗，請稍後再試')
+    } finally {
+      setPublishing(false)
+    }
+  }
+
+  const getHouseTypeLabel = (value: string) => {
+    return HOUSE_TYPES.find(t => t.value === value)?.label || value
+  }
+
+  const getBillingLabel = (value: string) => {
+    return BILLING_OPTIONS.find(b => b.value === value)?.label || value
   }
 
   if (!user?.credentialStatus?.twland?.exists) {
@@ -1035,16 +1136,169 @@ export default function CreateListingPage() {
             </AlertDescription>
           </Alert>
 
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">Step 3 預覽與發布功能開發中...</p>
-            <div className="mt-4 space-x-4">
-              <Button variant="outline" onClick={() => handleStepBack('publish')}>
-                返回編輯
-              </Button>
-              <Button disabled>
-                發布房源
-              </Button>
-            </div>
+          <div className="grid gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>房源預覽</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-muted/50 p-4 rounded-lg">
+                  <div>
+                    <span className="text-muted-foreground text-sm">房產地址</span>
+                    <div className="font-medium">{disclosureStatus?.disclosedData?.address}</div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-sm">建物面積</span>
+                    <div className="font-medium">{disclosureStatus?.disclosedData?.building_area} 坪</div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-sm">使用類型</span>
+                    <div className="font-medium">{disclosureStatus?.disclosedData?.use}</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="font-semibold mb-3">基本資訊</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">房源標題</span>
+                        <span>{formData.title}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">房屋類型</span>
+                        <span>{getHouseTypeLabel(formData.type)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">室內面積</span>
+                        <span>{formData.area} 坪</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">樓層</span>
+                        <span>{formData.floor} / {formData.totalFloors}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">房間配置</span>
+                        <span>{formData.bedroom}房{formData.bathroom}衛{formData.balcony ? '有陽台' : ''}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold mb-3">租金資訊</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">月租金</span>
+                        <span className="font-medium text-primary">${formData.rent.toLocaleString()} USDC</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">押金</span>
+                        <span className="font-medium">${formData.deposit.toLocaleString()} USDC</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">押金月數</span>
+                        <span>{Math.round(formData.deposit / formData.rent * 2) / 2} 個月</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {formData.facilities.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold mb-3">設施設備</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {formData.facilities.map(facility => (
+                        <Badge key={facility} variant="outline">{facility}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <h4 className="font-semibold mb-3">租賃規則</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-muted-foreground">寵物：</span>
+                      <span>{formData.pet ? '允許' : '不允許'}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-muted-foreground">開伙：</span>
+                      <span>{formData.cooking ? '允許' : '不允許'}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-muted-foreground">水費：</span>
+                      <span>{getBillingLabel(formData.waterBilling)}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-muted-foreground">電費：</span>
+                      <span>{getBillingLabel(formData.electricityBilling)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {formData.description && (
+                  <div>
+                    <h4 className="font-semibold mb-3">房源描述</h4>
+                    <p className="text-sm text-muted-foreground whitespace-pre-line">
+                      {formData.description}
+                    </p>
+                  </div>
+                )}
+
+                {formData.uploadedImages.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold mb-3">房源照片 ({formData.uploadedImages.length}張)</h4>
+                    <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                      {formData.uploadedImages.map((image, index) => (
+                        <div key={image.id} className="relative">
+                          <img
+                            src={image.gatewayUrl}
+                            alt={`Preview ${index + 1}`}
+                            className="w-full h-16 object-cover rounded"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement
+                              target.src = `https://indigo-definite-coyote-168.mypinata.cloud/ipfs/${image.ipfsHash}`
+                            }}
+                          />
+                          {index === 0 && (
+                            <div className="absolute top-0 left-0 bg-primary text-primary-foreground text-xs px-1 rounded-br">
+                              主圖
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="flex justify-center space-x-4">
+            <Button variant="outline" onClick={() => handleStepBack('publish')}>
+              返回編輯
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="lg" disabled={publishing}>
+                  {publishing ? '發布中...' : '確認發布'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>確認發布房源</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    確定要發布這個房源嗎？發布後房源將會在區塊鏈上創建，並向所有用戶開放申請。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>取消</AlertDialogCancel>
+                  <AlertDialogAction onClick={handlePublish} disabled={publishing}>
+                    {publishing ? '發布中...' : '確認發布'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       )}

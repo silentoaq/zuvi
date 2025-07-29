@@ -45,7 +45,7 @@ router.post('/create', async (req: AuthRequest, res, next) => {
     }
 
     // 上傳合約到 IPFS
-    const ipfsResult = await StorageService.uploadJSON(contract, 'contract');
+    const ipfsResult = await StorageService.uploadJSON(contract, 'lease', req.user!.publicKey);
 
     const [applicationPda] = derivePDAs.application(listingPubkey, applicantPubkey);
     const [leasePda] = derivePDAs.lease(listingPubkey, applicantPubkey);
@@ -66,6 +66,11 @@ router.post('/create', async (req: AuthRequest, res, next) => {
         systemProgram: SystemProgram.programId,
       })
       .transaction();
+
+    // 設置 recentBlockhash
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
 
     const serialized = tx.serialize({
       requireAllSignatures: false,
@@ -135,6 +140,11 @@ router.post('/:lease/sign', async (req: AuthRequest, res, next) => {
         rent: SYSVAR_RENT_PUBKEY,
       })
       .transaction();
+
+    // 設置 recentBlockhash
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
 
     const serialized = tx.serialize({
       requireAllSignatures: false,

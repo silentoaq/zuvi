@@ -40,6 +40,12 @@ router.get('/status/:requestId/:credentialId', async (req: AuthRequest, res, nex
   try {
     const { requestId, credentialId } = req.params;
 
+    console.log('Checking disclosure status:', {
+      publicKey: req.user!.publicKey,
+      requestId,
+      credentialId
+    });
+
     // 先檢查緩存的結果
     const cachedResult = CredentialService.getCachedDisclosure(
       req.user!.publicKey,
@@ -47,6 +53,7 @@ router.get('/status/:requestId/:credentialId', async (req: AuthRequest, res, nex
     );
 
     if (cachedResult) {
+      console.log('Found cached disclosure:', cachedResult);
       res.json({
         status: 'completed',
         disclosedData: cachedResult.data,
@@ -58,14 +65,19 @@ router.get('/status/:requestId/:credentialId', async (req: AuthRequest, res, nex
 
     // 檢查當前揭露狀態（不等待）
     const status = await CredentialService.getDisclosureStatus(requestId);
-    
+    console.log('Disclosure status from service:', status);
+
     // 如果完成了，嘗試驗證和緩存結果
     if (status.status === 'completed' && status.disclosedData) {
+      console.log('Disclosure completed, validating data:', status.disclosedData);
+
       const validationResult = await CredentialService.validateDisclosureData(
         req.user!.publicKey,
         credentialId,
         status.disclosedData
       );
+
+      console.log('Validation result:', validationResult);
       
       res.json({
         status: 'completed',

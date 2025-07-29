@@ -44,7 +44,8 @@
     "@types/ws": "^8.18.1",
     "nodemon": "^3.1.10",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vite-plugin-node-polyfills": "^0.24.0"
   },
   "tsconfig": {
     "compilerOptions": {

@@ -47,6 +47,11 @@ router.post('/raise', async (req: AuthRequest, res, next) => {
       })
       .transaction();
 
+    // 設置 recentBlockhash
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
+
     const serialized = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false
@@ -143,6 +148,11 @@ router.post('/:dispute/resolve', async (req: AuthRequest, res, next) => {
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .transaction();
+
+    // 設置 recentBlockhash
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
 
     const serialized = tx.serialize({
       requireAllSignatures: false,

@@ -101,7 +101,7 @@ export default function Navbar() {
             <span className="text-xl font-bold">Zuvi</span>
           </Link>
 
-          <NavigationMenu>
+          <NavigationMenu viewport={false}>
             <NavigationMenuList>
               <NavigationMenuItem>
                 <Link to="/" className={cn(

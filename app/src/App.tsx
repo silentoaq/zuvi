@@ -30,11 +30,9 @@ function AppContent() {
     <Router>
       <Layout>
         <Routes>
-          {/* 公開頁面 */}
           <Route path="/" element={<HomePage />} />
           <Route path="/listing/:id" element={<ListingDetailPage />} />
           
-          {/* 需要錢包連接 */}
           <Route 
             path="/applications" 
             element={
@@ -44,7 +42,6 @@ function AppContent() {
             } 
           />
           
-          {/* 需要自然人憑證 */}
           <Route 
             path="/apply/:listingId" 
             element={
@@ -54,7 +51,6 @@ function AppContent() {
             } 
           />
           
-          {/* 需要產權憑證 */}
           <Route 
             path="/listings/create" 
             element={
@@ -80,7 +76,6 @@ function AppContent() {
             } 
           />
           
-          {/* 仲裁者專用 */}
           <Route 
             path="/disputes" 
             element={
@@ -107,7 +102,7 @@ function App() {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <ConnectionProvider endpoint={endpoint}>
-        <WalletProvider wallets={wallets} autoConnect>
+        <WalletProvider wallets={wallets} autoConnect={true}>
           <WalletModalProvider>
             <AppContent />
           </WalletModalProvider>

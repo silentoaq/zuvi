@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 
 interface CredentialStatus {
   twfido?: {
@@ -36,7 +36,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, _get) => ({
+    (set) => ({
       user: null,
       token: null,
       isAuthenticated: false,
@@ -66,7 +66,8 @@ export const useAuthStore = create<AuthState>()(
         set({ 
           user: null, 
           token: null, 
-          isAuthenticated: false 
+          isAuthenticated: false,
+          isLoading: false
         }),
 
       setLoading: (isLoading) => 
@@ -74,11 +75,13 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'zuvi-auth',
+      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         user: state.user,
         token: state.token,
         isAuthenticated: state.isAuthenticated
-      })
+      }),
+      skipHydration: false
     }
   )
 )

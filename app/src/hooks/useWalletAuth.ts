@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { authService } from '@/service/auth'
 import { useAuthStore } from '@/stores/authStore'
@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/authStore'
 export const useWalletAuth = () => {
   const { connected, wallet, disconnect } = useWallet()
   const { isAuthenticated, user } = useAuthStore()
+  const isInitializedRef = useRef(false)
 
   const authenticate = useCallback(async () => {
     if (!wallet || !connected) return
@@ -33,24 +34,28 @@ export const useWalletAuth = () => {
     }
   }, [isAuthenticated])
 
+  // 初始化時檢查現有認證
   useEffect(() => {
-    const initAuth = async () => {
-      if (connected && !isAuthenticated) {
-        const tokenValid = await authService.verifyExistingToken()
-        if (!tokenValid && wallet) {
-          await authenticate()
-        }
+    if (isInitializedRef.current) return
+    isInitializedRef.current = true
+    
+    authService.verifyExistingToken()
+  }, [])
+
+  // 錢包連接後進行認證
+  useEffect(() => {
+    if (!connected || !wallet) {
+      if (isAuthenticated) {
+        authService.logout()
       }
+      return
     }
 
-    initAuth()
-  }, [connected, isAuthenticated, authenticate, wallet])
-
-  useEffect(() => {
-    if (!connected && isAuthenticated) {
-      authService.logout()
+    // 使用內部認證狀態檢查，避免 Zustand persist 延遲
+    if (!authService.isCurrentlyAuthenticated()) {
+      authenticate()
     }
-  }, [connected, isAuthenticated])
+  }, [connected, wallet, authenticate])
 
   return {
     authenticate,

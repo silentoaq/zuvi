@@ -31,11 +31,15 @@ router.post('/login', async (req, res, next) => {
       throw new ApiError(401, 'Invalid signature');
     }
 
-    // 驗證訊息時效性（5分鐘內）
-    const messageData = JSON.parse(message);
-    const timestamp = messageData.timestamp;
+    // 從訊息中提取時間戳
+    const timestampMatch = message.match(/時間: (\d+)/);
+    if (!timestampMatch) {
+      throw new ApiError(401, 'Invalid message format');
+    }
+
+    const timestamp = parseInt(timestampMatch[1]);
     const now = Date.now();
-    if (!timestamp || Math.abs(now - timestamp) > 5 * 60 * 1000) {
+    if (Math.abs(now - timestamp) > 5 * 60 * 1000) {
       throw new ApiError(401, 'Message expired');
     }
 
@@ -44,7 +48,6 @@ router.post('/login', async (req, res, next) => {
     try {
       credentialStatus = await CredentialService.getCredentialStatus(publicKey);
     } catch (error) {
-      // 獲取失敗不影響登錄
       console.log('Credential status unavailable:', error instanceof Error ? error.message : 'Unknown error');
     }
 
@@ -115,12 +118,17 @@ router.post('/message', async (req, res, next) => {
       throw new ApiError(400, 'Invalid public key');
     }
 
-    const message = JSON.stringify({
-      action: 'Connect to Zuvi',
-      publicKey,
-      timestamp: Date.now(),
-      nonce: Math.random().toString(36).substring(7)
-    });
+    const timestamp = Date.now();
+    const nonce = Math.random().toString(36).substring(7);
+    
+    const message = `歡迎使用 Zuvi 租房平台
+
+請簽署此訊息以驗證您的身份
+錢包地址: ${publicKey}
+時間: ${timestamp}
+隨機碼: ${nonce}
+
+此操作不會產生任何費用`;
 
     res.json({
       message,

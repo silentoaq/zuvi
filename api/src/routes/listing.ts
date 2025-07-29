@@ -7,13 +7,142 @@ import { ApiError } from '../middleware/errorHandler';
 import { AuthRequest, requirePropertyCredential } from '../middleware/auth';
 import { cache } from '../index';
 import { BN } from '@coral-xyz/anchor';
+import multer from 'multer';
 
 const router = Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+    files: 10 // 最多10張照片
+  },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  }
+});
+
+// 暫存房源照片
+router.post('/upload-images', requirePropertyCredential, upload.array('images', 10), async (req: AuthRequest, res, next): Promise<void> => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    
+    if (!files || files.length === 0) {
+      throw new ApiError(400, 'No images provided');
+    }
+
+    const uploadPromises = files.map(async (file, index) => {
+      const filename = `listing_${req.user!.publicKey}_${Date.now()}_${index}.${file.mimetype.split('/')[1]}`;
+      
+      const result = await StorageService.uploadFile(
+        file.buffer,
+        filename,
+        file.mimetype
+      );
+
+      return {
+        id: result.ipfsHash,
+        filename,
+        size: file.size,
+        mimetype: file.mimetype,
+        ipfsHash: result.ipfsHash,
+        gatewayUrl: result.gatewayUrl,
+        uploadedAt: Date.now()
+      };
+    });
+
+    const uploadedImages = await Promise.all(uploadPromises);
+
+    // 緩存暫存的圖片資訊（30分鐘過期）
+    const cacheKey = `tempImages:${req.user!.publicKey}:${Date.now()}`;
+    cache.set(cacheKey, uploadedImages, 1800);
+
+    res.json({
+      success: true,
+      images: uploadedImages,
+      cacheKey
+    });
+    return;
+  } catch (error) {
+    next(error);
+    return;
+  }
+});
+
+// 刪除暫存照片
+router.delete('/image/:imageId', requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
+  try {
+    const { imageId } = req.params;
+    
+    if (!imageId) {
+      throw new ApiError(400, 'Image ID is required');
+    }
+
+    const unpinned = await StorageService.unpin(imageId);
+    
+    const keys = cache.keys();
+    keys.forEach(key => {
+      if (key.startsWith(`tempImages:${req.user!.publicKey}:`)) {
+        const images = cache.get(key) as any[];
+        if (images && Array.isArray(images)) {
+          const filteredImages = images.filter(img => img.id !== imageId);
+          if (filteredImages.length !== images.length) {
+            cache.set(key, filteredImages);
+          }
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      unpinned,
+      message: unpinned ? 'Image deleted successfully' : 'Image removed from cache'
+    });
+    return;
+  } catch (error) {
+    next(error);
+    return;
+  }
+});
+
+// 獲取用戶暫存的照片
+router.get('/temp-images', requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
+  try {
+    const keys = cache.keys();
+    const userTempImages: any[] = [];
+
+    keys.forEach(key => {
+      if (key.startsWith(`tempImages:${req.user!.publicKey}:`)) {
+        const images = cache.get(key);
+        if (images && Array.isArray(images)) {
+          userTempImages.push(...images);
+        }
+      }
+    });
+
+    // 按上傳時間排序
+    userTempImages.sort((a, b) => b.uploadedAt - a.uploadedAt);
+
+    res.json({
+      success: true,
+      images: userTempImages,
+      count: userTempImages.length
+    });
+    return;
+  } catch (error) {
+    next(error);
+    return;
+  }
+});
 
 // 創建房源
 router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
   try {
-    const { propertyAttest, credentialId, rent, deposit, metadata } = req.body;
+    const { propertyAttest, credentialId, rent, deposit, metadata, imageIds } = req.body;
     const userPublicKey = new PublicKey(req.user!.publicKey);
 
     // 驗證參數
@@ -37,8 +166,39 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
       throw new ApiError(400, 'Invalid disclosure data');
     }
 
+    // 處理照片
+    let processedImages: string[] = [];
+    if (imageIds && Array.isArray(imageIds) && imageIds.length > 0) {
+      // 從緩存中獲取對應的圖片資訊
+      const keys = cache.keys();
+      const allTempImages: any[] = [];
+      
+      keys.forEach(key => {
+        if (key.startsWith(`tempImages:${req.user!.publicKey}:`)) {
+          const images = cache.get(key);
+          if (images && Array.isArray(images)) {
+            allTempImages.push(...images);
+          }
+        }
+      });
+
+      // 篩選用戶選擇的圖片
+      processedImages = imageIds
+        .map(id => allTempImages.find(img => img.id === id)?.ipfsHash)
+        .filter(Boolean);
+    }
+
+    // 構建最終的metadata
+    const finalMetadata = {
+      ...metadata,
+      media: {
+        images: processedImages,
+        primary_image: 0
+      }
+    };
+
     // 上傳 metadata 到 IPFS
-    const ipfsResult = await StorageService.uploadJSON(metadata, 'listing');
+    const ipfsResult = await StorageService.uploadJSON(finalMetadata, 'listing');
     
     // 準備鏈上資料
     const addressBytes = Buffer.alloc(64);
@@ -74,6 +234,14 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
     const serialized = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false
+    });
+
+    // 清除用戶的暫存圖片緩存
+    const keys = cache.keys();
+    keys.forEach(key => {
+      if (key.startsWith(`tempImages:${req.user!.publicKey}:`)) {
+        cache.del(key);
+      }
     });
 
     res.json({

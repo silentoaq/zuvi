@@ -29,7 +29,7 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "node-cache": "^5.1.2",
-    "pinata": "^2.4.9",
+    "pinata-web3": "^0.5.4",
     "tweetnacl": "^1.0.3",
     "ws": "^8.18.3"
   },

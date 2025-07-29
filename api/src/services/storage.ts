@@ -1,25 +1,35 @@
-import { PinataSDK } from 'pinata';
+import { PinataSDK } from 'pinata-web3';
 import { cache } from '../index';
 
-const pinata = new PinataSDK({
-  pinataJwt: process.env.PINATA_JWT!
-});
+let pinata: PinataSDK | null = null;
+
+function getPinata(): PinataSDK {
+  if (!pinata) {
+    const gateway = process.env.PINATA_GATEWAY!;
+    const cleanGateway = gateway.replace('https://', '').replace('/ipfs', '');
+    
+    pinata = new PinataSDK({
+      pinataJwt: process.env.PINATA_JWT!,
+      pinataGateway: cleanGateway
+    });
+  }
+  return pinata;
+}
 
 export class StorageService {
   // 上傳 JSON 到 IPFS
   static async uploadJSON(data: any, name: string) {
     try {
-      // 將 JSON 轉為 Blob 再轉為 File
       const jsonString = JSON.stringify(data);
       const blob = new Blob([jsonString], { type: 'application/json' });
       const file = new File([blob], `${name}.json`, { type: 'application/json' });
       
-      const result = await (pinata as any).upload.file(file);
+      const result = await getPinata().upload.file(file);
       
       return {
-        ipfsHash: result.IpfsHash || result.cid,
-        pinSize: result.PinSize || result.size,
-        gatewayUrl: `${process.env.PINATA_GATEWAY}/ipfs/${result.IpfsHash || result.cid}`
+        ipfsHash: result.IpfsHash,
+        pinSize: result.PinSize,
+        gatewayUrl: `${process.env.PINATA_GATEWAY}/ipfs/${result.IpfsHash}`
       };
     } catch (error) {
       throw new Error(`Failed to upload to IPFS: ${error}`);
@@ -54,12 +64,12 @@ export class StorageService {
       const blob = new Blob([file], { type: mimetype });
       const fileToUpload = new File([blob], filename, { type: mimetype });
       
-      const result = await (pinata as any).upload.file(fileToUpload);
+      const result = await getPinata().upload.file(fileToUpload);
       
       return {
-        ipfsHash: result.IpfsHash || result.cid,
-        pinSize: result.PinSize || result.size,
-        gatewayUrl: `${process.env.PINATA_GATEWAY}/ipfs/${result.IpfsHash || result.cid}`
+        ipfsHash: result.IpfsHash,
+        pinSize: result.PinSize,
+        gatewayUrl: `${process.env.PINATA_GATEWAY}/ipfs/${result.IpfsHash}`
       };
     } catch (error) {
       throw new Error(`Failed to upload file to IPFS: ${error}`);
@@ -69,7 +79,7 @@ export class StorageService {
   // 刪除 IPFS 上的內容
   static async unpin(ipfsHash: string) {
     try {
-      await (pinata as any).unpin(ipfsHash);
+      await getPinata().unpin([ipfsHash]);
       cache.del(`ipfs:${ipfsHash}`);
       return true;
     } catch (error) {

@@ -26,12 +26,14 @@ interface AuthState {
   token: string | null
   isAuthenticated: boolean
   isLoading: boolean
+  hasHydrated: boolean
   
   setUser: (user: User) => void
   setToken: (token: string) => void
   updateCredentialStatus: (status: CredentialStatus) => void
   logout: () => void
   setLoading: (loading: boolean) => void
+  setHasHydrated: (hydrated: boolean) => void
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -41,6 +43,7 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       isAuthenticated: false,
       isLoading: false,
+      hasHydrated: false,
 
       setUser: (user) => 
         set({ 
@@ -71,7 +74,10 @@ export const useAuthStore = create<AuthState>()(
         }),
 
       setLoading: (isLoading) => 
-        set({ isLoading })
+        set({ isLoading }),
+
+      setHasHydrated: (hasHydrated) =>
+        set({ hasHydrated })
     }),
     {
       name: 'zuvi-auth',
@@ -81,7 +87,9 @@ export const useAuthStore = create<AuthState>()(
         token: state.token,
         isAuthenticated: state.isAuthenticated
       }),
-      skipHydration: false
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true)
+      }
     }
   )
 )

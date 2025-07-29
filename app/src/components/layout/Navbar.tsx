@@ -20,21 +20,37 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { useWalletAuth } from '@/hooks/useWalletAuth'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/authStore'
+import { authService } from '@/service/auth'
 
 export default function Navbar() {
-  const { connected, publicKey } = useWallet()
+  const { connected, publicKey, disconnect } = useWallet()
   const { setVisible } = useWalletModal()
   const { theme, setTheme } = useTheme()
   const location = useLocation()
-  const { handleDisconnect, refreshCredentials, isAuthenticated, user } = useWalletAuth()
+  const { isAuthenticated, user } = useAuthStore()
 
   const isActive = (path: string) => location.pathname === path
 
   const handleWalletClick = () => {
     if (!connected) {
       setVisible(true)
+    }
+  }
+
+  const handleDisconnect = () => {
+    disconnect()
+    authService.logout()
+  }
+
+  const refreshCredentials = async () => {
+    if (!isAuthenticated) return
+    
+    try {
+      await authService.refreshCredentials()
+    } catch (error) {
+      console.error('刷新憑證失敗:', error)
     }
   }
 

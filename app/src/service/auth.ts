@@ -5,11 +5,29 @@ import { useAuthStore } from '@/stores/authStore'
 
 export class AuthService {
   private isAuthenticating = false
-  private hasValidToken = false
+  private _hasValidToken = false
+  private isInitialized = false
+  private isVerifying = false
 
   async authenticateWallet(wallet: WalletAdapter): Promise<void> {
-    if (!wallet.publicKey || this.isAuthenticating || this.hasValidToken) {
+    if (!wallet.publicKey) {
       return
+    }
+    
+    if (this.isAuthenticating || this.isVerifying) {
+      return
+    }
+    
+    if (this._hasValidToken) {
+      return
+    }
+
+    // 再次檢查 localStorage，避免競態條件
+    if (this.hasStoredToken()) {
+      const isValid = await this.verifyExistingToken()
+      if (isValid) {
+        return
+      }
     }
 
     const { setLoading, setUser, setToken } = useAuthStore.getState()
@@ -39,10 +57,10 @@ export class AuthService {
       localStorage.setItem('zuvi-auth-token', loginResponse.token)
       setToken(loginResponse.token)
       setUser(loginResponse.user)
-      this.hasValidToken = true
+      this._hasValidToken = true
 
     } catch (error) {
-      console.error('認證失敗:', error)
+      console.error('[AuthService] Authentication failed:', error)
       this.logout()
       throw error
     } finally {
@@ -67,48 +85,83 @@ export class AuthService {
   }
 
   async verifyExistingToken(): Promise<boolean> {
-    if (this.isAuthenticating) return false
+    if (this.isAuthenticating || this.isVerifying) {
+      return false
+    }
 
     const token = localStorage.getItem('zuvi-auth-token')
+    
     if (!token) {
-      this.hasValidToken = false
+      this._hasValidToken = false
       return false
     }
 
     const { setUser, setToken, setLoading } = useAuthStore.getState()
 
     try {
+      this.isVerifying = true
       setLoading(true)
+      
       const { valid, user } = await apiService.verifyToken()
       
       if (valid && user) {
         setToken(token)
         setUser(user)
-        this.hasValidToken = true
+        this._hasValidToken = true
         return true
       } else {
         this.logout()
         return false
       }
     } catch (error) {
-      console.error('驗證 token 失敗:', error)
+      console.error('[AuthService] Token verification error:', error)
       this.logout()
       return false
     } finally {
       setLoading(false)
+      this.isVerifying = false
     }
   }
 
   logout(): void {
+    // 如果正在驗證，不要清除 token
+    if (this.isVerifying) {
+      return
+    }
+    
     const { logout } = useAuthStore.getState()
     localStorage.removeItem('zuvi-auth-token')
     logout()
     this.isAuthenticating = false
-    this.hasValidToken = false
+    this._hasValidToken = false
+  }
+
+  // 直接檢查 localStorage 的 token
+  hasStoredToken(): boolean {
+    return !!localStorage.getItem('zuvi-auth-token')
+  }
+
+  // 檢查是否有有效的 token（記憶體中）
+  hasValidToken(): boolean {
+    return this._hasValidToken
   }
 
   isCurrentlyAuthenticated(): boolean {
-    return this.hasValidToken || useAuthStore.getState().isAuthenticated
+    // 優先檢查 localStorage，再檢查記憶體狀態
+    return this.hasStoredToken() || this._hasValidToken || useAuthStore.getState().isAuthenticated
+  }
+
+  // 確保初始化只執行一次
+  async initializeAuth(): Promise<void> {
+    if (this.isInitialized) {
+      return
+    }
+    
+    this.isInitialized = true
+    
+    if (this.hasStoredToken()) {
+      await this.verifyExistingToken()
+    }
   }
 }
 

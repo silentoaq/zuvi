@@ -48,7 +48,6 @@ export interface DisclosureResult {
 }
 
 export class CredentialService {
-  // 獲取完整憑證狀態
   static async getCredentialStatus(publicKey: string): Promise<CredentialStatus> {
     const did = `did:pkh:sol:${publicKey}`;
     const cacheKey = `credentialStatus:${did}`;
@@ -64,7 +63,6 @@ export class CredentialService {
     }
   }
 
-  // 創建產權憑證揭露請求
   static async createPropertyDisclosure(
     publicKey: string,
     credentialId: string
@@ -88,7 +86,6 @@ export class CredentialService {
     }
   }
 
-  // 檢查揭露狀態（不等待）
   static async getDisclosureStatus(requestId: string): Promise<{
     status: 'pending' | 'completed' | 'expired';
     disclosedData?: any;
@@ -105,34 +102,50 @@ export class CredentialService {
     }
   }
 
+  private static parseBuildingArea(areaString: string): number {
+    const match = areaString.match(/^(\d+\.?\d*)坪?$/);
+    if (!match) {
+      throw new Error('Invalid building area format');
+    }
+    
+    const area = parseFloat(match[1]);
+    return Math.round(area);
+  }
 
-
-  // 驗證揭露資料並緩存
   static async validateDisclosureData(
     publicKey: string,
     credentialId: string,
     disclosedData: any
   ): Promise<DisclosureResult> {
     try {
-      // 驗證揭露的用途必須是住宅
       if (disclosedData?.use !== '住宅') {
         return { success: false, error: 'Property must be residential' };
       }
 
-      // 驗證必要欄位
       if (!disclosedData?.address || !disclosedData?.building_area) {
         return { success: false, error: 'Missing required fields: address or building_area' };
       }
 
+      let parsedBuildingArea: number;
+      try {
+        parsedBuildingArea = this.parseBuildingArea(disclosedData.building_area);
+      } catch (error) {
+        return { 
+          success: false, 
+          error: `Invalid building area: ${error instanceof Error ? error.message : 'Unknown error'}` 
+        };
+      }
+
       const result = {
         success: true,
-        data: disclosedData,
+        data: {
+          ...disclosedData,
+          building_area: parsedBuildingArea
+        },
         credentialId
       };
 
-      // 緩存揭露結果
       const cacheKey = `disclosure:${publicKey}:${credentialId}`;
-      console.log('Setting cache with key:', cacheKey);
       cache.set(cacheKey, result, 600);
 
       return result;
@@ -144,13 +157,11 @@ export class CredentialService {
     }
   }
 
-  // 獲取緩存的揭露結果
   static getCachedDisclosure(publicKey: string, credentialId: string): DisclosureResult | null {
     const cacheKey = `disclosure:${publicKey}:${credentialId}`;
     return cache.get<DisclosureResult>(cacheKey) || null;
   }
 
-  // 生成 QR Code URL
   static generateQRCode(vpRequestUri: string) {
     return getSDK().generateQRCodeUrl(vpRequestUri);
   }

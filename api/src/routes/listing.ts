@@ -156,22 +156,9 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
       throw new ApiError(400, 'Deposit must be between 1-3 months rent');
     }
 
-    // 獲取緩存的揭露結果
-    console.log('Checking disclosure cache:', {
-      publicKey: req.user!.publicKey,
-      credentialId,
-      cacheKey: `disclosure:${req.user!.publicKey}:${credentialId}`
-    });
-    
     const disclosure = CredentialService.getCachedDisclosure(req.user!.publicKey, credentialId);
-    console.log('Disclosure result:', disclosure);
-    
-    if (!disclosure || !disclosure.success) {
-      // 列出所有相關的緩存 key
-      const keys = cache.keys();
-      const relevantKeys = keys.filter(k => k.startsWith(`disclosure:${req.user!.publicKey}:`));
-      console.log('Available disclosure cache keys:', relevantKeys);
-      
+  
+    if (!disclosure || !disclosure.success) { 
       throw new ApiError(400, 'Please complete property disclosure first');
     }
 

@@ -87,7 +87,6 @@ export class StorageService {
       cache.del(`ipfs:${ipfsHash}`);
       return true;
     } catch (error) {
-      console.error(`Failed to unpin ${ipfsHash}:`, error);
       return false;
     }
   }

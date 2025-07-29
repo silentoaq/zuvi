@@ -48,7 +48,6 @@ router.post('/login', async (req, res, next): Promise<void> => {
     try {
       credentialStatus = await CredentialService.getCredentialStatus(publicKey);
     } catch (error) {
-      console.log('Credential status unavailable:', error instanceof Error ? error.message : 'Unknown error');
     }
 
     // 生成 JWT

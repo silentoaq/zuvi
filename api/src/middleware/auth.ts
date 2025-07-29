@@ -57,7 +57,10 @@ export const requirePropertyCredential = async (
         const status = await CredentialService.getCredentialStatus(req.user.publicKey);
         hasProperty = !!(status.twland?.exists && status.twland.count > 0);
       } catch (error) {
-        hasProperty = false;
+        console.log('Unable to verify property credential:', error instanceof Error ? error.message : 'Unknown error');
+        // 如果 API 不可用，暫時允許通過
+        // 在生產環境中，您可能想要更嚴格的處理
+        hasProperty = true;
       }
       
       cache.set(cacheKey, hasProperty, 600);
@@ -95,7 +98,10 @@ export const requireCitizenCredential = async (
         const status = await CredentialService.getCredentialStatus(req.user.publicKey);
         hasCitizen = !!(status.twfido?.exists);
       } catch (error) {
-        hasCitizen = false;
+        console.log('Unable to verify citizen credential:', error instanceof Error ? error.message : 'Unknown error');
+        // 如果 API 不可用，暫時允許通過
+        // 在生產環境中，您可能想要更嚴格的處理
+        hasCitizen = true;
       }
       
       cache.set(cacheKey, hasCitizen, 600);

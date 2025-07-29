@@ -1,11 +1,17 @@
-import { TwattestSDK } from '@twattest/sdk';
+import { createTwattestSDK, TwattestSDK } from '@twattest/sdk';
 import { cache } from '../index';
 
-const sdk = new TwattestSDK({
-  baseUrl: process.env.TWATTEST_BASE_URL!,
-  apiKey: process.env.TWATTEST_API_KEY!,
-  timeout: 30000
-});
+let sdk: TwattestSDK | null = null;
+
+function getSDK(): TwattestSDK {
+  if (!sdk) {
+    sdk = createTwattestSDK({
+      baseUrl: process.env.TWATTEST_BASE_URL!,
+      apiKey: process.env.TWATTEST_API_KEY!
+    });
+  }
+  return sdk;
+}
 
 export interface AttestationData {
   merkleRoot: string;
@@ -44,12 +50,13 @@ export interface DisclosureResult {
 export class CredentialService {
   // 獲取完整憑證狀態
   static async getCredentialStatus(publicKey: string): Promise<CredentialStatus> {
-    const cacheKey = `credentialStatus:${publicKey}`;
+    const did = `did:pkh:sol:${publicKey}`;
+    const cacheKey = `credentialStatus:${did}`;
     const cached = cache.get<CredentialStatus>(cacheKey);
     if (cached) return cached;
 
     try {
-      const status = await sdk.getAttestationStatus(publicKey);
+      const status = await getSDK().getAttestationStatus(did);
       cache.set(cacheKey, status, 3600);
       return status;
     } catch (error) {
@@ -63,8 +70,9 @@ export class CredentialService {
     credentialId: string
   ): Promise<{ vpRequestUri: string; requestId: string }> {
     try {
-      const request = await sdk.createDisclosureRequest({
-        holderDid: publicKey,
+      const did = `did:pkh:sol:${publicKey}`;
+      const request = await getSDK().createDisclosureRequest({
+        holderDid: did,
         credentialType: 'PropertyCredential',
         credentialId,
         requiredFields: ['address', 'buildingArea', 'use'],
@@ -87,7 +95,7 @@ export class CredentialService {
     credentialId: string
   ): Promise<DisclosureResult> {
     try {
-      const disclosure = await sdk.waitForDisclosure(requestId, {
+      const disclosure = await getSDK().waitForDisclosure(requestId, {
         timeout: 300000,
         pollInterval: 2000
       });
@@ -128,6 +136,6 @@ export class CredentialService {
 
   // 生成 QR Code URL
   static generateQRCode(vpRequestUri: string) {
-    return sdk.generateQRCodeUrl(vpRequestUri);
+    return getSDK().generateQRCodeUrl(vpRequestUri);
   }
 }

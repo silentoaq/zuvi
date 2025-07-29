@@ -162,7 +162,7 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
     }
 
     // 驗證揭露資料
-    if (!disclosure.data?.address || !disclosure.data?.buildingArea || disclosure.data?.use !== '住宅') {
+    if (!disclosure.data?.address || !disclosure.data?.building_area || disclosure.data?.use !== '住宅') {
       throw new ApiError(400, 'Invalid disclosure data');
     }
 
@@ -212,7 +212,7 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
     const tx = await program.methods
       .createListing(
         Array.from(addressBytes),
-        disclosure.data.buildingArea,
+        disclosure.data.building_area,
         new BN(rent),
         new BN(deposit),
         StorageService.ipfsHashToBytes(ipfsResult.ipfsHash)
@@ -252,7 +252,7 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
       gatewayUrl: ipfsResult.gatewayUrl,
       disclosedData: {
         address: disclosure.data.address,
-        buildingArea: disclosure.data.buildingArea,
+        buildingArea: disclosure.data.building_area,
         use: disclosure.data.use
       }
     });

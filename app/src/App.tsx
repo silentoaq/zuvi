@@ -5,7 +5,7 @@ import { WalletModalProvider } from '@solana/wallet-adapter-react-ui'
 import { PhantomWalletAdapter } from '@solana/wallet-adapter-wallets'
 import { clusterApiUrl } from '@solana/web3.js'
 import { useMemo } from 'react'
-import { ThemeProvider } from 'next-themes'
+import { ThemeProvider, useTheme } from 'next-themes'
 import { Toaster } from 'sonner'
 
 import Layout from '@/components/layout/Layout'
@@ -26,6 +26,7 @@ import '@solana/wallet-adapter-react-ui/styles.css'
 
 function AppContent() {
   useWalletAuth()
+  const { theme } = useTheme()
 
   return (
     <Router>
@@ -87,7 +88,10 @@ function AppContent() {
           />
         </Routes>
       </Layout>
-      <Toaster position="top-right" />
+      <Toaster 
+        position="bottom-right" 
+        theme={theme as 'light' | 'dark' | 'system'} 
+      />
     </Router>
   )
 }

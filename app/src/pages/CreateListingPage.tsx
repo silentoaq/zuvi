@@ -19,9 +19,10 @@ interface PropertyCredential {
 
 interface DisclosureStatus {
   status: 'pending' | 'completed' | 'expired'
+  success?: boolean
   disclosedData?: {
     address: string
-    buildingArea: number
+    building_area: number
     use: string
   }
   error?: string
@@ -30,9 +31,8 @@ interface DisclosureStatus {
 export default function CreateListingPage() {
   const { user } = useAuthStore()
   
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1)
   const [selectedCredential, setSelectedCredential] = useState<PropertyCredential | null>(null)
-  const [expandedCredentials, setExpandedCredentials] = useState<Set<string>>(new Set())
+  const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set())
   const [disclosureStep, setDisclosureStep] = useState<'select' | 'waiting' | 'completed'>('select')
   const [vpRequestUri, setVpRequestUri] = useState<string>('')
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('')
@@ -42,16 +42,17 @@ export default function CreateListingPage() {
   const propertyCredentials = user?.credentialStatus?.twland?.attestations || []
 
   const toggleExpanded = (key: string) => {
-    const newExpanded = new Set(expandedCredentials)
+    const newExpanded = new Set(expandedFields)
     if (newExpanded.has(key)) {
       newExpanded.delete(key)
     } else {
       newExpanded.add(key)
     }
-    setExpandedCredentials(newExpanded)
+    setExpandedFields(newExpanded)
   }
 
-  const formatDisplayText = (text: string, isExpanded: boolean) => {
+  const formatDisplayText = (text: string, key: string) => {
+    const isExpanded = expandedFields.has(key)
     if (isExpanded) {
       return text
     }
@@ -92,6 +93,7 @@ export default function CreateListingPage() {
       setDisclosureStep('waiting')
       
       startPollingDisclosure(data.requestId, selectedCredential.data.credentialReference)
+      toast.success('憑證揭露請求已發起')
     } catch (error) {
       console.error('Error starting disclosure:', error)
       toast.error('無法發起憑證揭露，請稍後再試')
@@ -111,19 +113,34 @@ export default function CreateListingPage() {
 
         if (response.ok) {
           const status = await response.json()
+          console.log('Disclosure status:', status)
           setDisclosureStatus(status)
           
-          if (status.status === 'completed') {
+          if (status.status === 'completed' && status.success !== false) {
             clearInterval(pollInterval)
             setDisclosureStep('completed')
+            toast.success('憑證揭露完成！')
           } else if (status.status === 'expired') {
             clearInterval(pollInterval)
             toast.error('揭露請求已過期，請重新開始')
             setDisclosureStep('select')
+          } else if (status.success === false && status.error) {
+            clearInterval(pollInterval)
+            toast.error(`揭露失敗：${status.error}`)
+            setDisclosureStep('select')
           }
+        } else {
+          const error = await response.json().catch(() => ({ error: 'Unknown error' }))
+          console.error('API error:', error)
+          toast.error(`API 錯誤：${error.error || 'Unknown error'}`)
+          clearInterval(pollInterval)
+          setDisclosureStep('select')
         }
       } catch (error) {
         console.error('Error polling disclosure status:', error)
+        toast.error('網路錯誤，請檢查連線')
+        clearInterval(pollInterval)
+        setDisclosureStep('select')
       }
     }, 2000)
 
@@ -142,7 +159,10 @@ export default function CreateListingPage() {
   }
 
   const handleContinue = () => {
-    setCurrentStep(2)
+    console.log('進入填寫房源資訊步驟')
+    console.log('選擇的憑證:', selectedCredential)
+    console.log('揭露資料:', disclosureStatus?.disclosedData)
+    toast.info('進入下一步驟（開發中）')
   }
 
   if (!user?.credentialStatus?.twland?.exists) {
@@ -165,292 +185,208 @@ export default function CreateListingPage() {
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="text-center">
         <h1 className="text-3xl font-bold">刊登房源</h1>
-        <p className="text-muted-foreground">
-          步驟 {currentStep}/3：
-          {currentStep === 1 && '選擇產權憑證'}
-          {currentStep === 2 && '填寫房源資訊'}
-          {currentStep === 3 && '預覽與發布'}
-        </p>
+        <p className="text-muted-foreground">步驟 1/3：選擇產權憑證</p>
       </div>
 
-      {currentStep === 1 && (
-        <>
-          {disclosureStep === 'select' && (
-            <div className="space-y-6">
-              <Alert>
-                <Building className="h-4 w-4" />
-                <AlertDescription>
-                  請選擇要刊登的房產憑證，我們需要驗證房產資訊
-                </AlertDescription>
-              </Alert>
-
-              <div className="grid gap-4">
-                {propertyCredentials.map((credential, index) => (
-                  <Card 
-                    key={credential.address} 
-                    className={`cursor-pointer transition-colors ${
-                      selectedCredential?.address === credential.address 
-                        ? 'ring-2 ring-primary' 
-                        : 'hover:bg-muted/50'
-                    }`}
-                    onClick={() => handleSelectCredential(credential)}
-                  >
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-lg">房產憑證 #{index + 1}</CardTitle>
-                        <Badge variant="outline">
-                          {new Date(credential.expiry * 1000) > new Date() ? '有效' : '已過期'}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">憑證地址</span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                toggleExpanded(credential.address)
-                              }}
-                              className="h-6 w-6 p-0"
-                            >
-                              {expandedCredentials.has(credential.address) ? 
-                                <EyeOff className="h-3 w-3" /> : 
-                                <Eye className="h-3 w-3" />
-                              }
-                            </Button>
-                          </div>
-                          <div className="font-mono text-xs bg-muted p-2 rounded mt-1 break-all">
-                            {formatDisplayText(
-                              credential.address, 
-                              expandedCredentials.has(credential.address)
-                            )}
-                          </div>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">憑證ID</span>
-                          <div className="font-mono text-xs bg-muted p-2 rounded mt-1 break-all">
-                            {credential.data.credentialReference}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Merkle Root</span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                toggleExpanded(credential.data.merkleRoot)
-                              }}
-                              className="h-6 w-6 p-0"
-                            >
-                              {expandedCredentials.has(credential.data.merkleRoot) ? 
-                                <EyeOff className="h-3 w-3" /> : 
-                                <Eye className="h-3 w-3" />
-                              }
-                            </Button>
-                          </div>
-                          <div className="font-mono text-xs bg-muted p-2 rounded mt-1 break-all">
-                            {formatDisplayText(
-                              credential.data.merkleRoot,
-                              expandedCredentials.has(credential.data.merkleRoot)
-                            )}
-                          </div>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">到期日</span>
-                          <div className="text-xs bg-muted p-2 rounded mt-1">
-                            {formatExpiry(credential.expiry)}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-
-              {selectedCredential && (
-                <div className="flex justify-center">
-                  <Button 
-                    onClick={handleStartDisclosure}
-                    disabled={loading}
-                    size="lg"
-                  >
-                    {loading ? '發起中...' : '開始憑證揭露'}
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {disclosureStep === 'waiting' && (
-            <div className="space-y-6">
-              <Alert>
-                <Clock className="h-4 w-4" />
-                <AlertDescription>
-                  請使用您的憑證錢包掃描 QR Code 完成選擇性揭露
-                </AlertDescription>
-              </Alert>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-center">掃描 QR Code</CardTitle>
-                  {selectedCredential && (
-                    <div className="text-center text-sm text-muted-foreground">
-                      憑證ID: {selectedCredential.data.credentialReference}
-                    </div>
-                  )}
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-center">
-                    <div className="p-4 bg-white rounded-2xl shadow-sm border">
-                      <img 
-                        src={qrCodeUrl} 
-                        alt="Disclosure QR Code"
-                        className="w-64 h-64 rounded-xl"
-                      />
-                    </div>
-                  </div>
-                  
-                  <Separator />
-                  
-                  <div className="space-y-2">
-                    <div className="text-sm text-muted-foreground">或複製連結：</div>
-                    <div className="flex items-center space-x-2">
-                      <div className="flex-1 text-xs font-mono bg-muted p-2 rounded overflow-hidden">
-                        {vpRequestUri}
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => copyToClipboard(vpRequestUri)}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="text-center text-sm text-muted-foreground">
-                    等待憑證揭露完成...
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {disclosureStep === 'completed' && disclosureStatus?.disclosedData && (
-            <div className="space-y-6">
-              <Alert>
-                <CheckCircle className="h-4 w-4" />
-                <AlertDescription>
-                  憑證揭露完成！已獲得房產資訊
-                </AlertDescription>
-              </Alert>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>揭露的房產資訊</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <span className="text-muted-foreground text-sm">房產地址</span>
-                      <div className="font-medium">{disclosureStatus.disclosedData.address}</div>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground text-sm">建物面積</span>
-                      <div className="font-medium">{disclosureStatus.disclosedData.buildingArea} 坪</div>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground text-sm">使用類型</span>
-                      <div className="font-medium">{disclosureStatus.disclosedData.use}</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <div className="flex justify-center">
-                <Button onClick={handleContinue} size="lg">
-                  繼續填寫房源資訊
-                </Button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {currentStep === 2 && (
+      {disclosureStep === 'select' && (
         <div className="space-y-6">
           <Alert>
             <Building className="h-4 w-4" />
             <AlertDescription>
-              根據您的產權憑證資訊，填寫詳細的房源資料
+              請選擇要刊登的房產憑證，我們需要驗證房產資訊
+            </AlertDescription>
+          </Alert>
+
+          <div className="grid gap-4">
+            {propertyCredentials.map((credential, index) => (
+              <Card 
+                key={credential.address} 
+                className={`cursor-pointer transition-colors ${
+                  selectedCredential?.address === credential.address 
+                    ? 'ring-2 ring-primary' 
+                    : 'hover:bg-muted/50'
+                }`}
+                onClick={() => handleSelectCredential(credential)}
+              >
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">房產憑證 #{index + 1}</CardTitle>
+                    <Badge variant="outline">
+                      {new Date(credential.expiry * 1000) > new Date() ? '有效' : '已過期'}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-muted-foreground">憑證地址</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleExpanded(`address-${credential.address}`)
+                          }}
+                          className="h-6 w-6 p-0"
+                        >
+                          {expandedFields.has(`address-${credential.address}`) ? 
+                            <EyeOff className="h-3 w-3" /> : 
+                            <Eye className="h-3 w-3" />
+                          }
+                        </Button>
+                      </div>
+                      <div className="font-mono text-xs bg-muted p-2 rounded break-all">
+                        {formatDisplayText(credential.address, `address-${credential.address}`)}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <span className="text-muted-foreground">憑證ID</span>
+                      <div className="font-mono text-xs bg-muted p-2 rounded mt-1 break-all">
+                        {credential.data.credentialReference}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-muted-foreground">Merkle Root</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleExpanded(`merkle-${credential.data.merkleRoot}`)
+                          }}
+                          className="h-6 w-6 p-0"
+                        >
+                          {expandedFields.has(`merkle-${credential.data.merkleRoot}`) ? 
+                            <EyeOff className="h-3 w-3" /> : 
+                            <Eye className="h-3 w-3" />
+                          }
+                        </Button>
+                      </div>
+                      <div className="font-mono text-xs bg-muted p-2 rounded break-all">
+                        {formatDisplayText(credential.data.merkleRoot, `merkle-${credential.data.merkleRoot}`)}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <span className="text-muted-foreground">到期日</span>
+                      <div className="text-xs bg-muted p-2 rounded mt-1">
+                        {formatExpiry(credential.expiry)}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {selectedCredential && (
+            <div className="flex justify-center">
+              <Button 
+                onClick={handleStartDisclosure}
+                disabled={loading}
+                size="lg"
+              >
+                {loading ? '發起中...' : '開始憑證揭露'}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {disclosureStep === 'waiting' && (
+        <div className="space-y-6">
+          <Alert>
+            <Clock className="h-4 w-4" />
+            <AlertDescription>
+              請使用您的憑證錢包掃描 QR Code 完成選擇性揭露
             </AlertDescription>
           </Alert>
 
           <Card>
             <CardHeader>
-              <CardTitle>房產基本資訊</CardTitle>
+              <CardTitle className="text-center">掃描 QR Code</CardTitle>
+              {selectedCredential && (
+                <div className="text-center text-sm text-muted-foreground">
+                  憑證編號: {selectedCredential.data.credentialReference}
+                </div>
+              )}
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div className="flex justify-center">
+                <div className="p-6 bg-white rounded-2xl shadow-lg border">
+                  <img 
+                    src={qrCodeUrl} 
+                    alt="Disclosure QR Code"
+                    className="w-64 h-64 rounded-xl"
+                  />
+                </div>
+              </div>
+              
+              <Separator />
+              
+              <div className="space-y-2">
+                <div className="text-sm text-muted-foreground">或複製連結：</div>
+                <div className="flex items-center space-x-2">
+                  <div className="flex-1 text-xs font-mono bg-muted p-2 rounded overflow-hidden">
+                    {vpRequestUri}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => copyToClipboard(vpRequestUri)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="text-center text-sm text-muted-foreground">
+                等待憑證揭露完成...
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {disclosureStep === 'completed' && disclosureStatus?.success && disclosureStatus?.disclosedData && (
+        <div className="space-y-6">
+          <Alert>
+            <CheckCircle className="h-4 w-4" />
+            <AlertDescription>
+              憑證揭露完成！已獲得房產資訊
+            </AlertDescription>
+          </Alert>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>揭露的房產資訊</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <span className="text-muted-foreground">房產地址</span>
-                  <div className="font-medium">{disclosureStatus?.disclosedData?.address}</div>
+                  <span className="text-muted-foreground text-sm">房產地址</span>
+                  <div className="font-medium">{disclosureStatus.disclosedData.address}</div>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">建物面積</span>
-                  <div className="font-medium">{disclosureStatus?.disclosedData?.buildingArea} 坪</div>
+                  <span className="text-muted-foreground text-sm">建物面積</span>
+                  <div className="font-medium">{disclosureStatus.disclosedData.building_area} 坪</div>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">憑證ID</span>
-                  <div className="font-mono text-xs">{selectedCredential?.data.credentialReference}</div>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">使用類型</span>
-                  <div className="font-medium">{disclosureStatus?.disclosedData?.use}</div>
+                  <span className="text-muted-foreground text-sm">使用類型</span>
+                  <div className="font-medium">{disclosureStatus.disclosedData.use}</div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">房源資訊填寫表單開發中...</p>
-            <div className="mt-4 space-x-4">
-              <Button variant="outline" onClick={() => setCurrentStep(1)}>
-                上一步
-              </Button>
-              <Button onClick={() => setCurrentStep(3)}>
-                下一步
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {currentStep === 3 && (
-        <div className="space-y-6">
-          <Alert>
-            <CheckCircle className="h-4 w-4" />
-            <AlertDescription>
-              最後檢查您的房源資訊，確認無誤後發布
-            </AlertDescription>
-          </Alert>
-
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">預覽與發布功能開發中...</p>
-            <div className="mt-4 space-x-4">
-              <Button variant="outline" onClick={() => setCurrentStep(2)}>
-                上一步
-              </Button>
-              <Button>
-                發布房源
-              </Button>
-            </div>
+          <div className="flex justify-center">
+            <Button onClick={handleContinue} size="lg">
+              繼續填寫房源資訊
+            </Button>
           </div>
         </div>
       )}

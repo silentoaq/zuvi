@@ -5,7 +5,7 @@ import { AuthRequest } from '../middleware/auth';
 const router = Router();
 
 // 獲取憑證狀態
-router.get('/credentials', async (req: AuthRequest, res, next) => {
+router.get('/credentials', async (req: AuthRequest, res, next): Promise<void> => {
   try {
     let credentialStatus = null;
     
@@ -19,8 +19,10 @@ router.get('/credentials', async (req: AuthRequest, res, next) => {
     res.json({
       credentialStatus
     });
+    return;
   } catch (error) {
     next(error);
+    return;
   }
 });
 

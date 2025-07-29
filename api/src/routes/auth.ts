@@ -13,7 +13,7 @@ interface LoginRequest {
 }
 
 // Web3 錢包認證
-router.post('/login', async (req, res, next) => {
+router.post('/login', async (req, res, next): Promise<void> => {
   try {
     const { publicKey, signature, message } = req.body as LoginRequest;
 
@@ -68,8 +68,10 @@ router.post('/login', async (req, res, next) => {
         credentialStatus
       }
     });
+    return;
   } catch (error) {
     next(error);
+    return;
   }
 });
 
@@ -110,7 +112,7 @@ router.get('/verify', async (req, res, next): Promise<void> => {
 });
 
 // 生成錢包簽名訊息
-router.post('/message', async (req, res, next) => {
+router.post('/message', async (req, res, next): Promise<void> => {
   try {
     const { publicKey } = req.body;
 
@@ -134,8 +136,10 @@ router.post('/message', async (req, res, next) => {
       message,
       instructions: 'Please sign this message with your wallet'
     });
+    return;
   } catch (error) {
     next(error);
+    return;
   }
 });
 

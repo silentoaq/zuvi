@@ -88,30 +88,45 @@ export class CredentialService {
     }
   }
 
-  // 等待並驗證揭露結果
-  static async waitForDisclosure(
+  // 檢查揭露狀態（不等待）
+  static async getDisclosureStatus(requestId: string): Promise<{
+    status: 'pending' | 'completed' | 'expired';
+    disclosedData?: any;
+    error?: string;
+  }> {
+    try {
+      const status = await getSDK().getDisclosureStatus(requestId);
+      return status;
+    } catch (error) {
+      return {
+        status: 'pending',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+
+
+  // 驗證揭露資料並緩存
+  static async validateDisclosureData(
     publicKey: string,
-    requestId: string,
-    credentialId: string
+    credentialId: string,
+    disclosedData: any
   ): Promise<DisclosureResult> {
     try {
-      const disclosure = await getSDK().waitForDisclosure(requestId, {
-        timeout: 300000,
-        pollInterval: 2000
-      });
-
-      if (disclosure.status !== 'completed') {
-        return { success: false, error: 'Disclosure not completed' };
+      // 驗證揭露的用途必須是住宅
+      if (disclosedData?.use !== '住宅') {
+        return { success: false, error: 'Property must be residential' };
       }
 
-      // 驗證揭露的用途必須是住宅
-      if (disclosure.disclosedData?.use !== '住宅') {
-        return { success: false, error: 'Property must be residential' };
+      // 驗證必要欄位
+      if (!disclosedData?.address || !disclosedData?.building_area) {
+        return { success: false, error: 'Missing required fields: address or building_area' };
       }
 
       const result = {
         success: true,
-        data: disclosure.disclosedData,
+        data: disclosedData,
         credentialId
       };
 
@@ -123,7 +138,7 @@ export class CredentialService {
     } catch (error) {
       return { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+        error: error instanceof Error ? error.message : 'Unknown validation error' 
       };
     }
   }

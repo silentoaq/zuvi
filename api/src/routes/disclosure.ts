@@ -6,7 +6,7 @@ import { AuthRequest } from '../middleware/auth';
 const router = Router();
 
 // 創建產權憑證揭露請求
-router.post('/property', async (req: AuthRequest, res, next) => {
+router.post('/property', async (req: AuthRequest, res, next): Promise<void> => {
   try {
     const { credentialId } = req.body;
 
@@ -28,30 +28,69 @@ router.post('/property', async (req: AuthRequest, res, next) => {
       qrCodeUrl,
       credentialId
     });
+    return;
   } catch (error) {
     next(error);
+    return;
   }
 });
 
-// 檢查揭露狀態
-router.get('/status/:requestId/:credentialId', async (req: AuthRequest, res, next) => {
+// 檢查揭露狀態（輪詢用）
+router.get('/status/:requestId/:credentialId', async (req: AuthRequest, res, next): Promise<void> => {
   try {
     const { requestId, credentialId } = req.params;
 
-    const result = await CredentialService.waitForDisclosure(
+    // 先檢查緩存的結果
+    const cachedResult = CredentialService.getCachedDisclosure(
       req.user!.publicKey,
-      requestId,
       credentialId
     );
 
-    res.json(result);
+    if (cachedResult) {
+      res.json({
+        status: 'completed',
+        disclosedData: cachedResult.data,
+        success: cachedResult.success,
+        error: cachedResult.error
+      });
+      return;
+    }
+
+    // 檢查當前揭露狀態（不等待）
+    const status = await CredentialService.getDisclosureStatus(requestId);
+    
+    // 如果完成了，嘗試驗證和緩存結果
+    if (status.status === 'completed' && status.disclosedData) {
+      const validationResult = await CredentialService.validateDisclosureData(
+        req.user!.publicKey,
+        credentialId,
+        status.disclosedData
+      );
+      
+      res.json({
+        status: 'completed',
+        disclosedData: validationResult.success ? validationResult.data : null,
+        success: validationResult.success,
+        error: validationResult.error
+      });
+      return;
+    }
+    
+    res.json({
+      status: status.status,
+      disclosedData: null,
+      success: null,
+      error: status.error
+    });
+    return;
   } catch (error) {
     next(error);
+    return;
   }
 });
 
 // 獲取緩存的揭露結果
-router.get('/cached/:credentialId', async (req: AuthRequest, res, next) => {
+router.get('/cached/:credentialId', async (req: AuthRequest, res, next): Promise<void> => {
   try {
     const { credentialId } = req.params;
 
@@ -65,8 +104,10 @@ router.get('/cached/:credentialId', async (req: AuthRequest, res, next) => {
     }
 
     res.json(result);
+    return;
   } catch (error) {
     next(error);
+    return;
   }
 });
 

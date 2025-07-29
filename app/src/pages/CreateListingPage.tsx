@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Copy, CheckCircle, Clock, Building, Eye, EyeOff, Upload, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -34,6 +34,13 @@ interface DisclosureStatus {
   error?: string
 }
 
+interface UploadedImage {
+  id: string
+  filename: string
+  ipfsHash: string
+  gatewayUrl: string
+}
+
 interface ListingFormData {
   title: string
   type: string
@@ -51,7 +58,7 @@ interface ListingFormData {
   waterBilling: string
   electricityBilling: string
   description: string
-  images: File[]
+  uploadedImages: UploadedImage[]
 }
 
 const HOUSE_TYPES = [
@@ -80,6 +87,7 @@ export default function CreateListingPage() {
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('')
   const [disclosureStatus, setDisclosureStatus] = useState<DisclosureStatus | null>(null)
   const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
   
   const [formData, setFormData] = useState<ListingFormData>({
     title: '',
@@ -98,10 +106,44 @@ export default function CreateListingPage() {
     waterBilling: 'utility',
     electricityBilling: 'utility',
     description: '',
-    images: []
+    uploadedImages: []
   })
 
   const propertyCredentials = user?.credentialStatus?.twland?.attestations || []
+
+  useEffect(() => {
+    clearAllTempImages()
+    
+    return () => {
+      clearAllTempImages()
+    }
+  }, [])
+
+  const clearAllTempImages = async () => {
+    try {
+      const response = await fetch('/api/listings/temp-images', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
+        }
+      })
+      
+      if (response.ok) {
+        const { images } = await response.json()
+        await Promise.all(
+          images.map((img: UploadedImage) => 
+            fetch(`/api/listings/image/${img.id}`, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
+              }
+            })
+          )
+        )
+      }
+    } catch (error) {
+      console.error('Error clearing temp images:', error)
+    }
+  }
 
   const toggleExpanded = (key: string) => {
     const newExpanded = new Set(expandedFields)
@@ -232,26 +274,94 @@ export default function CreateListingPage() {
     }))
   }
 
-  const handleImageUpload = (files: FileList | null) => {
-    if (!files) return
+  const handleImageUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
     
     const newImages = Array.from(files).filter(file => file.type.startsWith('image/'))
-    if (newImages.length + formData.images.length > 10) {
+    if (newImages.length + formData.uploadedImages.length > 10) {
       toast.error('最多只能上傳10張照片')
       return
     }
     
-    setFormData(prev => ({
-      ...prev,
-      images: [...prev.images, ...newImages]
-    }))
+    try {
+      setUploading(true)
+      const formDataToSend = new FormData()
+      newImages.forEach(file => {
+        formDataToSend.append('images', file)
+      })
+
+      const response = await fetch('/api/listings/upload-images', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
+        },
+        body: formDataToSend
+      })
+
+      if (!response.ok) {
+        throw new Error('Upload failed')
+      }
+
+      const { images } = await response.json()
+      setFormData(prev => ({
+        ...prev,
+        uploadedImages: [...prev.uploadedImages, ...images]
+      }))
+      
+      toast.success(`成功上傳 ${images.length} 張照片`)
+    } catch (error) {
+      console.error('Error uploading images:', error)
+      toast.error('照片上傳失敗')
+    } finally {
+      setUploading(false)
+    }
   }
 
-  const removeImage = (index: number) => {
+  const [deletingImages, setDeletingImages] = useState<Set<string>>(new Set())
+
+  const removeImage = async (index: number) => {
+    const imageToRemove = formData.uploadedImages[index]
+    if (!imageToRemove || deletingImages.has(imageToRemove.id)) return
+
+    setDeletingImages(prev => new Set(prev).add(imageToRemove.id))
+
     setFormData(prev => ({
       ...prev,
-      images: prev.images.filter((_, i) => i !== index)
+      uploadedImages: prev.uploadedImages.filter((_, i) => i !== index)
     }))
+
+    try {
+      const response = await fetch(`/api/listings/image/${imageToRemove.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('Delete failed')
+      }
+      
+      toast.success('照片已刪除')
+    } catch (error) {
+      console.error('Error removing image:', error)
+      toast.error('刪除照片失敗，已回復')
+      
+      setFormData(prev => {
+        const newImages = [...prev.uploadedImages]
+        newImages.splice(index, 0, imageToRemove)
+        return {
+          ...prev,
+          uploadedImages: newImages
+        }
+      })
+    } finally {
+      setDeletingImages(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(imageToRemove.id)
+        return newSet
+      })
+    }
   }
 
   const validateForm = () => {
@@ -281,6 +391,23 @@ export default function CreateListingPage() {
   const handleFormSubmit = () => {
     if (!validateForm()) return
     setDisclosureStep('publish')
+  }
+
+  const handleStepBack = async (fromStep: string) => {
+    if (fromStep === 'form' || fromStep === 'publish') {
+      await clearAllTempImages()
+      setFormData(prev => ({ ...prev, uploadedImages: [] }))
+    }
+    
+    if (fromStep === 'waiting') {
+      setDisclosureStep('select')
+    } else if (fromStep === 'completed') {
+      setDisclosureStep('select')
+    } else if (fromStep === 'form') {
+      setDisclosureStep('completed')
+    } else if (fromStep === 'publish') {
+      setDisclosureStep('form')
+    }
   }
 
   if (!user?.credentialStatus?.twland?.exists) {
@@ -470,6 +597,12 @@ export default function CreateListingPage() {
               <div className="text-center text-sm text-muted-foreground">
                 等待憑證揭露完成...
               </div>
+
+              <div className="flex justify-center">
+                <Button variant="outline" onClick={() => handleStepBack('waiting')}>
+                  取消
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -496,7 +629,7 @@ export default function CreateListingPage() {
                 </div>
                 <div>
                   <span className="text-muted-foreground text-sm">建物面積</span>
-                  <div className="font-medium">{disclosureStatus.disclosedData.building_area} 坪</div>
+                  <div className="font-medium">{disclosureStatus.disclosedData.building_area}</div>
                 </div>
                 <div>
                   <span className="text-muted-foreground text-sm">使用類型</span>
@@ -506,7 +639,10 @@ export default function CreateListingPage() {
             </CardContent>
           </Card>
 
-          <div className="flex justify-center">
+          <div className="flex justify-center space-x-4">
+            <Button variant="outline" onClick={() => handleStepBack('completed')}>
+              重新選擇
+            </Button>
             <Button onClick={handleContinue} size="lg">
               繼續填寫房源資訊
             </Button>
@@ -535,7 +671,7 @@ export default function CreateListingPage() {
                 </div>
                 <div>
                   <span className="text-muted-foreground text-sm">建物面積</span>
-                  <div className="font-medium">{disclosureStatus?.disclosedData?.building_area} 坪</div>
+                  <div className="font-medium">{disclosureStatus?.disclosedData?.building_area}</div>
                 </div>
                 <div>
                   <span className="text-muted-foreground text-sm">使用類型</span>
@@ -820,20 +956,31 @@ export default function CreateListingPage() {
                   onChange={(e) => handleImageUpload(e.target.files)}
                   className="hidden"
                   id="image-upload"
+                  disabled={uploading}
                 />
 
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {formData.images.map((image, index) => (
-                      <div key={index} className="relative group">
+                    {formData.uploadedImages.map((image, index) => (
+                      <div key={image.id} className={`relative group ${deletingImages.has(image.id) ? 'opacity-50' : ''}`}>
                         <img
-                          src={URL.createObjectURL(image)}
+                          src={image.gatewayUrl}
                           alt={`Preview ${index + 1}`}
                           className="w-full h-24 object-cover rounded-lg"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement
+                            target.src = `https://indigo-definite-coyote-168.mypinata.cloud/ipfs/${image.ipfsHash}`
+                          }}
+                          loading="lazy"
                         />
                         {index === 0 && (
                           <div className="absolute top-1 left-1 bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded">
                             主圖
+                          </div>
+                        )}
+                        {deletingImages.has(image.id) && (
+                          <div className="absolute inset-0 bg-black/20 rounded-lg flex items-center justify-center">
+                            <div className="text-xs text-white">刪除中...</div>
                           </div>
                         )}
                         <Button
@@ -841,24 +988,27 @@ export default function CreateListingPage() {
                           size="sm"
                           className="absolute -top-2 -right-2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                           onClick={() => removeImage(index)}
+                          disabled={deletingImages.has(image.id)}
                         >
                           <X className="h-4 w-4" />
                         </Button>
                       </div>
                     ))}
                     
-                    {formData.images.length < 10 && (
-                      <Label htmlFor="image-upload" className="cursor-pointer">
+                    {formData.uploadedImages.length < 10 && (
+                      <Label htmlFor="image-upload" className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
                         <div className="w-full h-24 border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center hover:border-muted-foreground/50 transition-colors">
                           <Upload className="h-6 w-6 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground mt-1">添加照片</span>
+                          <span className="text-xs text-muted-foreground mt-1">
+                            {uploading ? '上傳中...' : '添加照片'}
+                          </span>
                         </div>
                       </Label>
                     )}
                   </div>
                   
                   <div className="text-xs text-muted-foreground">
-                    已上傳 {formData.images.length} / 10 張照片，支援 JPG、PNG 格式
+                    已上傳 {formData.uploadedImages.length} / 10 張照片，支援 JPG、PNG 格式
                   </div>
                 </div>
               </CardContent>
@@ -866,7 +1016,7 @@ export default function CreateListingPage() {
           </div>
 
           <div className="flex justify-center space-x-4">
-            <Button variant="outline" onClick={() => setDisclosureStep('completed')}>
+            <Button variant="outline" onClick={() => handleStepBack('form')}>
               上一步
             </Button>
             <Button onClick={handleFormSubmit} size="lg">
@@ -888,7 +1038,7 @@ export default function CreateListingPage() {
           <div className="text-center py-12">
             <p className="text-muted-foreground">Step 3 預覽與發布功能開發中...</p>
             <div className="mt-4 space-x-4">
-              <Button variant="outline" onClick={() => setDisclosureStep('form')}>
+              <Button variant="outline" onClick={() => handleStepBack('publish')}>
                 返回編輯
               </Button>
               <Button disabled>

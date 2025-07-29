@@ -6,6 +6,7 @@ import { PhantomWalletAdapter } from '@solana/wallet-adapter-wallets'
 import { clusterApiUrl } from '@solana/web3.js'
 import { useMemo } from 'react'
 import { ThemeProvider } from 'next-themes'
+import { Toaster } from 'sonner'
 
 import Layout from '@/components/layout/Layout'
 import {
@@ -86,6 +87,7 @@ function AppContent() {
           />
         </Routes>
       </Layout>
+      <Toaster position="top-right" />
     </Router>
   )
 }

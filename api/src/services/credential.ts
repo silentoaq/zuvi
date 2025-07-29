@@ -75,7 +75,7 @@ export class CredentialService {
         holderDid: did,
         credentialType: 'PropertyCredential',
         credentialId,
-        requiredFields: ['address', 'buildingArea', 'use'],
+        requiredFields: ['address', 'building_area', 'use'],
         purpose: '租房平台房源刊登驗證'
       });
 

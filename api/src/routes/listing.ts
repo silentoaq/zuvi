@@ -251,6 +251,104 @@ router.post('/create', authenticateToken, requirePropertyCredential, async (req:
   }
 });
 
+// 更新房源 (需要認證)
+router.put('/:publicKey', authenticateToken, requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
+  try {
+    const { publicKey } = req.params;
+    const { rent, deposit, metadata, imageIds } = req.body;
+    const userPublicKey = new PublicKey(req.user!.publicKey);
+    const listingPubkey = new PublicKey(publicKey);
+
+    const listing = await program.account.listing.fetch(listingPubkey);
+    if (!listing.owner.equals(userPublicKey)) {
+      throw new ApiError(403, 'Not the owner of this listing');
+    }
+
+    if (listing.status === 1) {
+      throw new ApiError(400, 'Cannot update rented listing');
+    }
+
+    if (deposit && rent && (deposit < rent || deposit > rent * 3)) {
+      throw new ApiError(400, 'Deposit must be between 1-3 months rent');
+    }
+
+    let metadataUri = null;
+    if (metadata) {
+      let processedImages: string[] = [];
+      if (imageIds && Array.isArray(imageIds) && imageIds.length > 0) {
+        const keys = cache.keys();
+        const allTempImages: any[] = [];
+        
+        keys.forEach(key => {
+          if (key.startsWith(`tempImages:${req.user!.publicKey}:`)) {
+            const images = cache.get(key);
+            if (images && Array.isArray(images)) {
+              allTempImages.push(...images);
+            }
+          }
+        });
+
+        processedImages = imageIds
+          .map(id => allTempImages.find(img => img.id === id)?.ipfsHash)
+          .filter(Boolean);
+      }
+
+      const finalMetadata = {
+        ...metadata,
+        media: {
+          images: processedImages,
+          primary_image: 0
+        }
+      };
+
+      const ipfsResult = await StorageService.uploadJSON(finalMetadata, 'listing', req.user!.publicKey);
+      metadataUri = StorageService.ipfsHashToBytes(ipfsResult.ipfsHash);
+    }
+
+    const tx = await program.methods
+      .updateListing(
+        rent ? new BN(rent) : null,
+        deposit ? new BN(deposit) : null,
+        metadataUri
+      )
+      .accountsStrict({
+        listing: listingPubkey,
+        owner: userPublicKey,
+      })
+      .transaction();
+
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
+
+    const serialized = tx.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false
+    });
+
+    if (metadata) {
+      const keys = cache.keys();
+      keys.forEach(key => {
+        if (key.startsWith(`tempImages:${req.user!.publicKey}:`)) {
+          cache.del(key);
+        }
+      });
+    }
+
+    cache.del(`listing:${publicKey}`);
+    cache.flushAll();
+
+    res.json({
+      success: true,
+      transaction: serialized.toString('base64')
+    });
+    return;
+  } catch (error) {
+    next(error);
+    return;
+  }
+});
+
 // 切換房源狀態 (需要認證)
 router.post('/:publicKey/toggle', authenticateToken, requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
   try {
@@ -362,9 +460,9 @@ router.get('/:publicKey', async (req, res, next): Promise<void> => {
 // 查詢房源列表 (公開)
 router.get('/', async (req, res, next): Promise<void> => {
   try {
-    const { status, owner, page = 1, limit = 20 } = req.query;
+    const { status, owner, page = 1, limit = 20, sort } = req.query;
     
-    const cacheKey = `listings:${status}:${owner}:${page}:${limit}`;
+    const cacheKey = `listings:${status}:${owner}:${page}:${limit}:${sort}`;
     const cached = cache.get(cacheKey);
     if (cached) {
       res.json(cached);
@@ -379,6 +477,15 @@ router.get('/', async (req, res, next): Promise<void> => {
     }
     if (owner) {
       filtered = filtered.filter(l => l.account.owner.toString() === owner);
+    }
+
+    // 排序
+    if (sort === 'price_low') {
+      filtered.sort((a, b) => a.account.rent.cmp(b.account.rent));
+    } else if (sort === 'price_high') {
+      filtered.sort((a, b) => b.account.rent.cmp(a.account.rent));
+    } else {
+      filtered.sort((a, b) => b.account.createdAt.toNumber() - a.account.createdAt.toNumber());
     }
 
     const startIndex = (Number(page) - 1) * Number(limit);

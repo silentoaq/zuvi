@@ -8,9 +8,9 @@ pub const DISPUTE_SEED: &[u8] = b"dispute";
 
 /// 帳戶大小常數
 pub const CONFIG_SIZE: usize = 8 + 32 + 32 + 32 + 32 + 2 + 1; // ~139 bytes
-pub const LISTING_SIZE: usize = 8 + 32 + 32 + 64 + 4 + 8 + 8 + 46 + 1 + 1 + 32 + 8; // ~267 bytes
-pub const APPLICATION_SIZE: usize = 8 + 32 + 32 + 32 + 46 + 1 + 8; // ~207 bytes
-pub const LEASE_SIZE: usize = 8 + 32 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 1 + 4 + 8 + 46 + 1 + 1 + 1; // ~275 bytes
+pub const LISTING_SIZE: usize = 8 + 32 + 32 + 64 + 4 + 8 + 8 + 64 + 1 + 1 + 32 + 8; // ~285 bytes
+pub const APPLICATION_SIZE: usize = 8 + 32 + 32 + 32 + 64 + 1 + 8; // ~225 bytes
+pub const LEASE_SIZE: usize = 8 + 32 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 1 + 4 + 8 + 64 + 1 + 1 + 1; // ~293 bytes
 pub const ESCROW_SIZE: usize = 8 + 32 + 8 + 1 + 8 + 8 + 1 + 1 + 1; // ~115 bytes
 pub const DISPUTE_SIZE: usize = 8 + 32 + 32 + 1 + 1 + 8; // ~75 bytes
 
@@ -47,7 +47,6 @@ pub const MAX_PAYMENT_DAY: u8 = 28;
 
 /// 時間常數
 pub const SECONDS_PER_DAY: i64 = 86400;
-pub const DAYS_PER_MONTH: i64 = 30; // 簡化計算
 
 /// IPFS Hash 長度 (CIDv0)
-pub const IPFS_HASH_LENGTH: usize = 46;
+pub const IPFS_HASH_LENGTH: usize = 64;

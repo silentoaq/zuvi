@@ -4,6 +4,7 @@ pub mod constants;
 pub mod errors;
 pub mod instructions;
 pub mod state;
+pub mod time_utils;
 
 use instructions::*;
 
@@ -34,7 +35,7 @@ pub mod zuvi {
         building_area: u32,
         rent: u64,
         deposit: u64,
-        metadata_uri: [u8; 46],
+        metadata_uri: [u8; 64],
     ) -> Result<()> {
         instructions::create_listing(ctx, address, building_area, rent, deposit, metadata_uri)
     }
@@ -45,7 +46,7 @@ pub mod zuvi {
         ctx: Context<UpdateListing>,
         rent: Option<u64>,
         deposit: Option<u64>,
-        metadata_uri: Option<[u8; 46]>,
+        metadata_uri: Option<[u8; 64]>,
     ) -> Result<()> {
         instructions::update_listing(ctx, rent, deposit, metadata_uri)
     }
@@ -58,7 +59,7 @@ pub mod zuvi {
 
     /// 申請租賃
     /// 提交租賃申請和相關資料
-    pub fn apply_lease(ctx: Context<ApplyLease>, message_uri: [u8; 46]) -> Result<()> {
+    pub fn apply_lease(ctx: Context<ApplyLease>, message_uri: [u8; 64]) -> Result<()> {
         instructions::apply_lease(ctx, message_uri)
     }
 
@@ -76,7 +77,7 @@ pub mod zuvi {
         start_date: i64,
         end_date: i64,
         payment_day: u8,
-        contract_uri: [u8; 46],
+        contract_uri: [u8; 64],
     ) -> Result<()> {
         instructions::create_lease(ctx, applicant, start_date, end_date, payment_day, contract_uri)
     }

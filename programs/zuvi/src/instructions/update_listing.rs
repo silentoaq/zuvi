@@ -6,7 +6,7 @@ pub fn update_listing(
     ctx: Context<UpdateListing>,
     rent: Option<u64>,
     deposit: Option<u64>,
-    metadata_uri: Option<[u8; 46]>,
+    metadata_uri: Option<[u8; 64]>,
 ) -> Result<()> {
     let listing = &mut ctx.accounts.listing;
     

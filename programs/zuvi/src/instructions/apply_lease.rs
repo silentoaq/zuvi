@@ -4,7 +4,7 @@ use crate::{constants::*, errors::*, state::*};
 /// 申請租賃
 pub fn apply_lease(
     ctx: Context<ApplyLease>,
-    message_uri: [u8; 46],
+    message_uri: [u8; 64],
 ) -> Result<()> {
     let listing = &ctx.accounts.listing;
     let applicant = &ctx.accounts.applicant;

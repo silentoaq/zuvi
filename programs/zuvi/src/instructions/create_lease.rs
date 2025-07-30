@@ -8,7 +8,7 @@ pub fn create_lease(
     start_date: i64,
     end_date: i64,
     payment_day: u8,
-    contract_uri: [u8; 46],
+    contract_uri: [u8; 64],
 ) -> Result<()> {
     let listing = &ctx.accounts.listing;
     let application = &ctx.accounts.application;

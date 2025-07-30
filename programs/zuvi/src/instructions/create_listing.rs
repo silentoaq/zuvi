@@ -8,7 +8,7 @@ pub fn create_listing(
     building_area: u32,
     rent: u64,
     deposit: u64,
-    metadata_uri: [u8; 46],
+    metadata_uri: [u8; 64],
 ) -> Result<()> {
     let config = &ctx.accounts.config;
     

@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, Transfer};
 use anchor_spl::token_interface::TokenAccount;
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, state::*, time_utils::TimeUtils};
 
 /// 支付租金
 pub fn pay_rent(ctx: Context<PayRent>) -> Result<()> {
@@ -33,13 +33,14 @@ pub fn pay_rent(ctx: Context<PayRent>) -> Result<()> {
         ZuviError::LeaseEnded
     );
     
-    // 計算下次繳費時間
-    let months_since_start = ((clock.unix_timestamp - lease.start_date) / (DAYS_PER_MONTH * SECONDS_PER_DAY)) as u32;
-    let should_have_paid = months_since_start + 1; // 加上首期
-    
-    // 檢查是否已繳費
+    // 使用新的時間計算邏輯檢查是否需要付租
     require!(
-        lease.paid_months < should_have_paid,
+        TimeUtils::is_rent_due(
+            clock.unix_timestamp,
+            lease.start_date,
+            lease.payment_day,
+            lease.paid_months
+        ),
         ZuviError::PaymentNotDue
     );
     

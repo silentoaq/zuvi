@@ -33,7 +33,7 @@ pub struct Listing {
     /// 押金金額 (USDC lamports)
     pub deposit: u64,
     /// IPFS Hash 存放房源詳情
-    pub metadata_uri: [u8; 46],
+    pub metadata_uri: [u8; 64],
     /// 狀態: 0=可用, 1=已租, 2=下架
     pub status: u8,
     /// 當前承租人（如果有）
@@ -52,7 +52,7 @@ pub struct Application {
     /// 承租人憑證公鑰
     pub tenant_attest: Pubkey,
     /// IPFS Hash 存放申請資料
-    pub message_uri: [u8; 46],
+    pub message_uri: [u8; 64],
     /// 狀態: 0=待審, 1=核准, 2=拒絕
     pub status: u8,
     /// 創建時間戳
@@ -88,7 +88,7 @@ pub struct Lease {
     pub last_payment: i64,
     
     /// IPFS Hash 存放合約內容
-    pub contract_uri: [u8; 46],
+    pub contract_uri: [u8; 64],
     /// 狀態: 0=生效中, 1=已完成, 2=已終止
     pub status: u8,
     /// 房東是否已簽署

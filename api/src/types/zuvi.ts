@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/zuvi.json`.
  */
 export type Zuvi = {
-  "address": "2Mipufx8cUUVUD5bqZjGK2yFWvjVM4jBaKVmw9zD5hzP",
+  "address": "5YUDDtqCHn11CgvmqNe3F2BgXzq68WeQJasv8hQFrux1",
   "metadata": {
     "name": "zuvi",
     "version": "0.1.0",
@@ -111,7 +111,7 @@ export type Zuvi = {
           "type": {
             "array": [
               "u8",
-              46
+              64
             ]
           }
         }
@@ -470,7 +470,7 @@ export type Zuvi = {
           "type": {
             "array": [
               "u8",
-              46
+              64
             ]
           }
         }
@@ -594,7 +594,7 @@ export type Zuvi = {
           "type": {
             "array": [
               "u8",
-              46
+              64
             ]
           }
         }
@@ -1485,7 +1485,7 @@ export type Zuvi = {
             "option": {
               "array": [
                 "u8",
-                46
+                64
               ]
             }
           }
@@ -1738,7 +1738,7 @@ export type Zuvi = {
             "type": {
               "array": [
                 "u8",
-                46
+                64
               ]
             }
           },
@@ -2018,7 +2018,7 @@ export type Zuvi = {
             "type": {
               "array": [
                 "u8",
-                46
+                64
               ]
             }
           },
@@ -2109,7 +2109,7 @@ export type Zuvi = {
             "type": {
               "array": [
                 "u8",
-                46
+                64
               ]
             }
           },

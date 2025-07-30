@@ -8,7 +8,7 @@ pub mod time_utils;
 
 use instructions::*;
 
-declare_id!("2Mipufx8cUUVUD5bqZjGK2yFWvjVM4jBaKVmw9zD5hzP");
+declare_id!("5YUDDtqCHn11CgvmqNe3F2BgXzq68WeQJasv8hQFrux1");
 
 #[program]
 pub mod zuvi {

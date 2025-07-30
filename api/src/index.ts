@@ -19,6 +19,7 @@ import { leaseRouter } from './routes/lease';
 import { paymentRouter } from './routes/payment';
 import { disputeRouter } from './routes/dispute';
 import { disclosureRouter } from './routes/disclosure';
+import { cleanupRouter } from './routes/cleanup';
 import { setupWebSocket } from './ws/websocket';
 import { errorHandler } from './middleware/errorHandler';
 import { authenticateToken } from './middleware/auth';
@@ -47,6 +48,7 @@ app.use('/api/leases', authenticateToken, leaseRouter);
 app.use('/api/payments', authenticateToken, paymentRouter);
 app.use('/api/disputes', authenticateToken, disputeRouter);
 app.use('/api/disclosure', authenticateToken, disclosureRouter);
+app.use('/api/cleanup', authenticateToken, cleanupRouter);
 
 setupWebSocket(wss);
 

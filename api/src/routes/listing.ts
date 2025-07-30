@@ -26,7 +26,6 @@ const upload = multer({
   }
 });
 
-// 暫存房源照片 (需要認證)
 router.post('/upload-images', authenticateToken, requirePropertyCredential, upload.array('images', 10), async (req: AuthRequest, res, next): Promise<void> => {
   try {
     const files = req.files as Express.Multer.File[];
@@ -72,7 +71,6 @@ router.post('/upload-images', authenticateToken, requirePropertyCredential, uplo
   }
 });
 
-// 獲取用戶暫存的照片 (需要認證)
 router.get('/temp-images', authenticateToken, requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
   try {
     const keys = cache.keys();
@@ -101,7 +99,6 @@ router.get('/temp-images', authenticateToken, requirePropertyCredential, async (
   }
 });
 
-// 刪除暫存照片 (需要認證)
 router.delete('/image/:imageId', authenticateToken, requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
   try {
     const { imageId } = req.params;
@@ -137,7 +134,6 @@ router.delete('/image/:imageId', authenticateToken, requirePropertyCredential, a
   }
 });
 
-// 創建房源 (需要認證)
 router.post('/create', authenticateToken, requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
   try {
     const { propertyAttest, credentialId, rent, deposit, metadata, imageIds } = req.body;
@@ -242,6 +238,10 @@ router.post('/create', authenticateToken, requirePropertyCredential, async (req:
         address: disclosure.data.address,
         buildingArea: disclosure.data.building_area,
         use: disclosure.data.use
+      },
+      cleanup: {
+        metadataHash: ipfsResult.ipfsHash,
+        imageHashes: processedImages
       }
     });
     return;
@@ -251,7 +251,6 @@ router.post('/create', authenticateToken, requirePropertyCredential, async (req:
   }
 });
 
-// 更新房源 (需要認證)
 router.put('/:publicKey', authenticateToken, requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
   try {
     const { publicKey } = req.params;
@@ -272,44 +271,63 @@ router.put('/:publicKey', authenticateToken, requirePropertyCredential, async (r
       throw new ApiError(400, 'Deposit must be between 1-3 months rent');
     }
 
-    let metadataUri = null;
+    let oldMetadataHash = null;
+    let newMetadataHash = null;
+    let removedImageHashes: string[] = [];
+    let metadataUriBytes: number[] | null = null;
+
     if (metadata) {
-      let processedImages: string[] = [];
-      if (imageIds && Array.isArray(imageIds) && imageIds.length > 0) {
-        const keys = cache.keys();
-        const allTempImages: any[] = [];
+      oldMetadataHash = StorageService.bytesToIpfsHash(listing.metadataUri);
+      
+      try {
+        const oldMetadata = await StorageService.getJSON(oldMetadataHash);
+        const oldImages = (oldMetadata as any)?.media?.images || [];
         
-        keys.forEach(key => {
-          if (key.startsWith(`tempImages:${req.user!.publicKey}:`)) {
-            const images = cache.get(key);
-            if (images && Array.isArray(images)) {
-              allTempImages.push(...images);
+        let processedImages: string[] = [];
+        if (imageIds && Array.isArray(imageIds) && imageIds.length > 0) {
+          const keys = cache.keys();
+          const allTempImages: any[] = [];
+          
+          keys.forEach(key => {
+            if (key.startsWith(`tempImages:${req.user!.publicKey}:`)) {
+              const images = cache.get(key);
+              if (images && Array.isArray(images)) {
+                allTempImages.push(...images);
+              }
             }
-          }
-        });
+          });
 
-        processedImages = imageIds
-          .map(id => allTempImages.find(img => img.id === id)?.ipfsHash)
-          .filter(Boolean);
-      }
-
-      const finalMetadata = {
-        ...metadata,
-        media: {
-          images: processedImages,
-          primary_image: 0
+          processedImages = imageIds
+            .map(id => allTempImages.find(img => img.id === id)?.ipfsHash)
+            .filter(Boolean);
         }
-      };
 
-      const ipfsResult = await StorageService.uploadJSON(finalMetadata, 'listing', req.user!.publicKey);
-      metadataUri = StorageService.ipfsHashToBytes(ipfsResult.ipfsHash);
+        const newImages = [...(metadata.media?.images || []), ...processedImages];
+        removedImageHashes = oldImages.filter((img: string) => !newImages.includes(img));
+
+        const finalMetadata = {
+          ...metadata,
+          media: {
+            images: newImages,
+            primary_image: 0
+          }
+        };
+
+        const ipfsResult = await StorageService.uploadJSON(finalMetadata, 'listing', req.user!.publicKey);
+        newMetadataHash = ipfsResult.ipfsHash;
+        
+        metadataUriBytes = StorageService.ipfsHashToBytes(ipfsResult.ipfsHash);
+      } catch (error) {
+        console.error('Error processing metadata update:', error);
+        throw new ApiError(500, 'Failed to process metadata update');
+      }
     }
 
     const tx = await program.methods
       .updateListing(
         rent ? new BN(rent) : null,
         deposit ? new BN(deposit) : null,
-        metadataUri
+        metadata ? Array.from(metadataUriBytes!) : null
       )
       .accountsStrict({
         listing: listingPubkey,
@@ -340,7 +358,12 @@ router.put('/:publicKey', authenticateToken, requirePropertyCredential, async (r
 
     res.json({
       success: true,
-      transaction: serialized.toString('base64')
+      transaction: serialized.toString('base64'),
+      cleanup: {
+        oldMetadataHash,
+        newMetadataHash,
+        removedImageHashes
+      }
     });
     return;
   } catch (error) {
@@ -349,7 +372,6 @@ router.put('/:publicKey', authenticateToken, requirePropertyCredential, async (r
   }
 });
 
-// 切換房源狀態 (需要認證)
 router.post('/:publicKey/toggle', authenticateToken, requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
   try {
     const { publicKey } = req.params;
@@ -393,7 +415,6 @@ router.post('/:publicKey/toggle', authenticateToken, requirePropertyCredential, 
   }
 });
 
-// 查詢單一房源 (公開)
 router.get('/:publicKey', async (req, res, next): Promise<void> => {
   try {
     const { publicKey } = req.params;
@@ -457,7 +478,6 @@ router.get('/:publicKey', async (req, res, next): Promise<void> => {
   }
 });
 
-// 查詢房源列表 (公開)
 router.get('/', async (req, res, next): Promise<void> => {
   try {
     const { status, owner, page = 1, limit = 20, sort } = req.query;
@@ -479,7 +499,6 @@ router.get('/', async (req, res, next): Promise<void> => {
       filtered = filtered.filter(l => l.account.owner.toString() === owner);
     }
 
-    // 排序
     if (sort === 'price_low') {
       filtered.sort((a, b) => a.account.rent.cmp(b.account.rent));
     } else if (sort === 'price_high') {

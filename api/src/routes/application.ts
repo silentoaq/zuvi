@@ -74,8 +74,9 @@ router.post('/apply', requireCitizenCredential, async (req: AuthRequest, res, ne
     res.json({
       success: true,
       transaction: serialized.toString('base64'),
-      application: applicationPda.toString(),
-      ipfsHash: ipfsResult.ipfsHash
+      cleanup: {
+        ipfsHash: ipfsResult.ipfsHash
+      }
     });
   } catch (error) {
     next(error);
@@ -96,6 +97,8 @@ router.delete('/:applicationId', async (req: AuthRequest, res, next) => {
     if (applicationAccount.status !== 0) {
       throw new ApiError(400, 'Cannot cancel processed application');
     }
+
+    const messageIpfsHash = StorageService.bytesToIpfsHash(applicationAccount.messageUri);
 
     const tx = await program.methods
       .closeApplication(
@@ -127,7 +130,10 @@ router.delete('/:applicationId', async (req: AuthRequest, res, next) => {
 
     res.json({
       success: true,
-      transaction: serialized.toString('base64')
+      transaction: serialized.toString('base64'),
+      cleanup: {
+        messageIpfsHash: messageIpfsHash
+      }
     });
   } catch (error) {
     next(error);

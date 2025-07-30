@@ -39,8 +39,9 @@ app.use(express.json());
 
 app.use('/api/auth', authRouter);
 
+app.use('/api/listings', listingRouter);
+
 app.use('/api/user', authenticateToken, userRouter);
-app.use('/api/listings', authenticateToken, listingRouter);
 app.use('/api/applications', authenticateToken, applicationRouter);
 app.use('/api/leases', authenticateToken, leaseRouter);
 app.use('/api/payments', authenticateToken, paymentRouter);

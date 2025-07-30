@@ -4,7 +4,7 @@ import { program, derivePDAs, apiSignerWallet } from '../config/solana';
 import { CredentialService } from '../services/credential';
 import { StorageService } from '../services/storage';
 import { ApiError } from '../middleware/errorHandler';
-import { AuthRequest, requirePropertyCredential } from '../middleware/auth';
+import { AuthRequest, requirePropertyCredential, authenticateToken } from '../middleware/auth';
 import { cache } from '../index';
 import { BN } from '@coral-xyz/anchor';
 import multer from 'multer';
@@ -14,8 +14,8 @@ const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB
-    files: 10 // 最多10張照片
+    fileSize: 5 * 1024 * 1024,
+    files: 10
   },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
@@ -26,8 +26,8 @@ const upload = multer({
   }
 });
 
-// 暫存房源照片
-router.post('/upload-images', requirePropertyCredential, upload.array('images', 10), async (req: AuthRequest, res, next): Promise<void> => {
+// 暫存房源照片 (需要認證)
+router.post('/upload-images', authenticateToken, requirePropertyCredential, upload.array('images', 10), async (req: AuthRequest, res, next): Promise<void> => {
   try {
     const files = req.files as Express.Multer.File[];
     
@@ -57,8 +57,6 @@ router.post('/upload-images', requirePropertyCredential, upload.array('images', 
     });
 
     const uploadedImages = await Promise.all(uploadPromises);
-
-    // 緩存暫存的圖片資訊（30分鐘過期）
     const cacheKey = `tempImages:${req.user!.publicKey}:${Date.now()}`;
     cache.set(cacheKey, uploadedImages, 1800);
 
@@ -74,8 +72,37 @@ router.post('/upload-images', requirePropertyCredential, upload.array('images', 
   }
 });
 
-// 刪除暫存照片
-router.delete('/image/:imageId', requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
+// 獲取用戶暫存的照片 (需要認證)
+router.get('/temp-images', authenticateToken, requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
+  try {
+    const keys = cache.keys();
+    const userTempImages: any[] = [];
+
+    keys.forEach(key => {
+      if (key.startsWith(`tempImages:${req.user!.publicKey}:`)) {
+        const images = cache.get(key);
+        if (images && Array.isArray(images)) {
+          userTempImages.push(...images);
+        }
+      }
+    });
+
+    userTempImages.sort((a, b) => b.uploadedAt - a.uploadedAt);
+
+    res.json({
+      success: true,
+      images: userTempImages,
+      count: userTempImages.length
+    });
+    return;
+  } catch (error) {
+    next(error);
+    return;
+  }
+});
+
+// 刪除暫存照片 (需要認證)
+router.delete('/image/:imageId', authenticateToken, requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
   try {
     const { imageId } = req.params;
     
@@ -110,48 +137,16 @@ router.delete('/image/:imageId', requirePropertyCredential, async (req: AuthRequ
   }
 });
 
-// 獲取用戶暫存的照片
-router.get('/temp-images', requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
-  try {
-    const keys = cache.keys();
-    const userTempImages: any[] = [];
-
-    keys.forEach(key => {
-      if (key.startsWith(`tempImages:${req.user!.publicKey}:`)) {
-        const images = cache.get(key);
-        if (images && Array.isArray(images)) {
-          userTempImages.push(...images);
-        }
-      }
-    });
-
-    // 按上傳時間排序
-    userTempImages.sort((a, b) => b.uploadedAt - a.uploadedAt);
-
-    res.json({
-      success: true,
-      images: userTempImages,
-      count: userTempImages.length
-    });
-    return;
-  } catch (error) {
-    next(error);
-    return;
-  }
-});
-
-// 創建房源
-router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
+// 創建房源 (需要認證)
+router.post('/create', authenticateToken, requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
   try {
     const { propertyAttest, credentialId, rent, deposit, metadata, imageIds } = req.body;
     const userPublicKey = new PublicKey(req.user!.publicKey);
 
-    // 驗證參數
     if (!propertyAttest || !credentialId || !rent || !deposit || !metadata) {
       throw new ApiError(400, 'Missing required fields');
     }
 
-    // 驗證押金範圍 (1-3個月租金)
     if (deposit < rent || deposit > rent * 3) {
       throw new ApiError(400, 'Deposit must be between 1-3 months rent');
     }
@@ -162,15 +157,12 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
       throw new ApiError(400, 'Please complete property disclosure first');
     }
 
-    // 驗證揭露資料
     if (!disclosure.data?.address || !disclosure.data?.building_area || disclosure.data?.use !== '住宅') {
       throw new ApiError(400, 'Invalid disclosure data');
     }
 
-    // 處理照片
     let processedImages: string[] = [];
     if (imageIds && Array.isArray(imageIds) && imageIds.length > 0) {
-      // 從緩存中獲取對應的圖片資訊
       const keys = cache.keys();
       const allTempImages: any[] = [];
       
@@ -183,13 +175,11 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
         }
       });
 
-      // 篩選用戶選擇的圖片
       processedImages = imageIds
         .map(id => allTempImages.find(img => img.id === id)?.ipfsHash)
         .filter(Boolean);
     }
 
-    // 構建最終的metadata
     const finalMetadata = {
       ...metadata,
       media: {
@@ -198,10 +188,8 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
       }
     };
 
-    // 上傳 metadata 到 IPFS
     const ipfsResult = await StorageService.uploadJSON(finalMetadata, 'listing', req.user!.publicKey);
     
-    // 準備鏈上資料
     const addressBytes = Buffer.alloc(64);
     addressBytes.write(disclosure.data.address);
     
@@ -209,7 +197,6 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
     const [listingPda] = derivePDAs.listing(propertyAttestPubkey);
     const [configPda] = derivePDAs.config();
 
-    // 創建交易
     const tx = await program.methods
       .createListing(
         Array.from(addressBytes),
@@ -228,21 +215,16 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
       })
       .transaction();
 
-    // 設置 recentBlockhash
     const { blockhash } = await program.provider.connection.getLatestBlockhash();
     tx.recentBlockhash = blockhash;
     tx.feePayer = userPublicKey;
-
-    // API 簽名交易
     tx.partialSign(apiSignerWallet.payer);
 
-    // 序列化交易供前端簽名
     const serialized = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false
     });
 
-    // 清除用戶的暫存圖片緩存
     const keys = cache.keys();
     keys.forEach(key => {
       if (key.startsWith(`tempImages:${req.user!.publicKey}:`)) {
@@ -269,70 +251,43 @@ router.post('/create', requirePropertyCredential, async (req: AuthRequest, res, 
   }
 });
 
-// 查詢房源列表
-router.get('/', async (req, res, next): Promise<void> => {
+// 切換房源狀態 (需要認證)
+router.post('/:publicKey/toggle', authenticateToken, requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
   try {
-    const { status, owner, page = 1, limit = 20 } = req.query;
-    
-    const cacheKey = `listings:${status}:${owner}:${page}:${limit}`;
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      res.json(cached);
-      return;
+    const { publicKey } = req.params;
+    const userPublicKey = new PublicKey(req.user!.publicKey);
+    const listingPubkey = new PublicKey(publicKey);
+
+    const listing = await program.account.listing.fetch(listingPubkey);
+    if (!listing.owner.equals(userPublicKey)) {
+      throw new ApiError(403, 'Not the owner of this listing');
     }
 
-    // 獲取所有房源帳戶
-    const listings = await program.account.listing.all();
-
-    // 過濾
-    let filtered = listings;
-    if (status !== undefined) {
-      filtered = filtered.filter(l => l.account.status === Number(status));
-    }
-    if (owner) {
-      filtered = filtered.filter(l => l.account.owner.toString() === owner);
-    }
-
-    // 分頁
-    const startIndex = (Number(page) - 1) * Number(limit);
-    const endIndex = startIndex + Number(limit);
-    const paginated = filtered.slice(startIndex, endIndex);
-
-    // 加載 IPFS 資料
-    const enriched = await Promise.all(
-      paginated.map(async (listing) => {
-        const ipfsHash = StorageService.bytesToIpfsHash(listing.account.metadataUri);
-        const metadata = await StorageService.getJSON(ipfsHash);
-        
-        return {
-          publicKey: listing.publicKey.toString(),
-          owner: listing.account.owner.toString(),
-          propertyAttest: listing.account.propertyAttest.toString(),
-          address: Buffer.from(listing.account.address).toString('utf8').replace(/\0/g, ''),
-          buildingArea: listing.account.buildingArea,
-          rent: listing.account.rent.toString(),
-          deposit: listing.account.deposit.toString(),
-          status: listing.account.status,
-          currentTenant: listing.account.currentTenant,
-          createdAt: listing.account.createdAt.toNumber(),
-          metadata,
-          ipfsHash
-        };
+    const tx = await program.methods
+      .toggleListing()
+      .accountsStrict({
+        listing: listingPubkey,
+        owner: userPublicKey,
       })
-    );
+      .transaction();
 
-    const result = {
-      listings: enriched,
-      pagination: {
-        total: filtered.length,
-        page: Number(page),
-        limit: Number(limit),
-        pages: Math.ceil(filtered.length / Number(limit))
-      }
-    };
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
 
-    cache.set(cacheKey, result, 300);
-    res.json(result);
+    const serialized = tx.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false
+    });
+
+    cache.del(`listing:${publicKey}`);
+    cache.flushAll();
+
+    res.json({
+      success: true,
+      transaction: serialized.toString('base64'),
+      newStatus: listing.status === 0 ? 2 : 0
+    });
     return;
   } catch (error) {
     next(error);
@@ -340,11 +295,15 @@ router.get('/', async (req, res, next): Promise<void> => {
   }
 });
 
-// 查詢單一房源
+// 查詢單一房源 (公開)
 router.get('/:publicKey', async (req, res, next): Promise<void> => {
   try {
     const { publicKey } = req.params;
     
+    if (!publicKey || publicKey.length < 32) {
+      throw new ApiError(400, 'Invalid public key format');
+    }
+
     const cacheKey = `listing:${publicKey}`;
     const cached = cache.get(cacheKey);
     if (cached) {
@@ -352,11 +311,29 @@ router.get('/:publicKey', async (req, res, next): Promise<void> => {
       return;
     }
 
-    const listingPubkey = new PublicKey(publicKey);
-    const listing = await program.account.listing.fetch(listingPubkey);
+    let listingPubkey: PublicKey;
+    try {
+      listingPubkey = new PublicKey(publicKey);
+    } catch {
+      throw new ApiError(400, 'Invalid public key format');
+    }
 
-    const ipfsHash = StorageService.bytesToIpfsHash(listing.metadataUri);
-    const metadata = await StorageService.getJSON(ipfsHash);
+    let listing;
+    try {
+      listing = await program.account.listing.fetch(listingPubkey);
+    } catch {
+      throw new ApiError(404, 'Listing not found');
+    }
+
+    let metadata = null;
+    let ipfsHash = null;
+    
+    try {
+      ipfsHash = StorageService.bytesToIpfsHash(listing.metadataUri);
+      metadata = await StorageService.getJSON(ipfsHash);
+    } catch (error) {
+      console.error('Error loading metadata:', error);
+    }
 
     const result = {
       publicKey,
@@ -382,46 +359,84 @@ router.get('/:publicKey', async (req, res, next): Promise<void> => {
   }
 });
 
-// 切換房源狀態 (上架/下架)
-router.post('/:publicKey/toggle', requirePropertyCredential, async (req: AuthRequest, res, next): Promise<void> => {
+// 查詢房源列表 (公開)
+router.get('/', async (req, res, next): Promise<void> => {
   try {
-    const { publicKey } = req.params;
-    const userPublicKey = new PublicKey(req.user!.publicKey);
-    const listingPubkey = new PublicKey(publicKey);
-
-    // 檢查擁有者
-    const listing = await program.account.listing.fetch(listingPubkey);
-    if (!listing.owner.equals(userPublicKey)) {
-      throw new ApiError(403, 'Not the owner of this listing');
+    const { status, owner, page = 1, limit = 20 } = req.query;
+    
+    const cacheKey = `listings:${status}:${owner}:${page}:${limit}`;
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      res.json(cached);
+      return;
     }
 
-    const tx = await program.methods
-      .toggleListing()
-      .accountsStrict({
-        listing: listingPubkey,
-        owner: userPublicKey,
+    const listings = await program.account.listing.all();
+
+    let filtered = listings;
+    if (status !== undefined && status !== 'all') {
+      filtered = filtered.filter(l => l.account.status === Number(status));
+    }
+    if (owner) {
+      filtered = filtered.filter(l => l.account.owner.toString() === owner);
+    }
+
+    const startIndex = (Number(page) - 1) * Number(limit);
+    const endIndex = startIndex + Number(limit);
+    const paginated = filtered.slice(startIndex, endIndex);
+
+    const enriched = await Promise.all(
+      paginated.map(async (listing) => {
+        try {
+          const ipfsHash = StorageService.bytesToIpfsHash(listing.account.metadataUri);
+          const metadata = await StorageService.getJSON(ipfsHash);
+          
+          return {
+            publicKey: listing.publicKey.toString(),
+            owner: listing.account.owner.toString(),
+            propertyAttest: listing.account.propertyAttest.toString(),
+            address: Buffer.from(listing.account.address).toString('utf8').replace(/\0/g, ''),
+            buildingArea: listing.account.buildingArea,
+            rent: listing.account.rent.toString(),
+            deposit: listing.account.deposit.toString(),
+            status: listing.account.status,
+            currentTenant: listing.account.currentTenant,
+            createdAt: listing.account.createdAt.toNumber(),
+            metadata,
+            ipfsHash
+          };
+        } catch (error) {
+          console.error('Error processing listing:', error);
+          return {
+            publicKey: listing.publicKey.toString(),
+            owner: listing.account.owner.toString(),
+            propertyAttest: listing.account.propertyAttest.toString(),
+            address: Buffer.from(listing.account.address).toString('utf8').replace(/\0/g, ''),
+            buildingArea: listing.account.buildingArea,
+            rent: listing.account.rent.toString(),
+            deposit: listing.account.deposit.toString(),
+            status: listing.account.status,
+            currentTenant: listing.account.currentTenant,
+            createdAt: listing.account.createdAt.toNumber(),
+            metadata: null,
+            ipfsHash: null
+          };
+        }
       })
-      .transaction();
+    );
 
-    // 設置 recentBlockhash
-    const { blockhash } = await program.provider.connection.getLatestBlockhash();
-    tx.recentBlockhash = blockhash;
-    tx.feePayer = userPublicKey;
+    const result = {
+      listings: enriched,
+      pagination: {
+        total: filtered.length,
+        page: Number(page),
+        limit: Number(limit),
+        pages: Math.ceil(filtered.length / Number(limit))
+      }
+    };
 
-    const serialized = tx.serialize({
-      requireAllSignatures: false,
-      verifySignatures: false
-    });
-
-    // 清除緩存
-    cache.del(`listing:${publicKey}`);
-    cache.flushAll();
-
-    res.json({
-      success: true,
-      transaction: serialized.toString('base64'),
-      newStatus: listing.status === 0 ? 2 : 0
-    });
+    cache.set(cacheKey, result, 300);
+    res.json(result);
     return;
   } catch (error) {
     next(error);

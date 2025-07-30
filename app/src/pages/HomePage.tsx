@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { MapPin, Bed, Bath, Home } from 'lucide-react'
-import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
+import { MapPin, Bed, Bath, Home, Search } from 'lucide-react'
+import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -53,11 +53,27 @@ export default function HomePage() {
   const fetchListings = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/listings?status=${filterStatus}&sort=${sortBy}`)
-      const data = await response.json()
-      setListings(data.listings || [])
+      const token = localStorage.getItem('zuvi-auth-token')
+      const headers: HeadersInit = {}
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
+      const response = await fetch(`/api/listings?status=${filterStatus}&sort=${sortBy}`, {
+        headers
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setListings(data.listings || [])
+      } else {
+        console.error('Failed to fetch listings:', response.status)
+        setListings([])
+      }
     } catch (error) {
       console.error('Error fetching listings:', error)
+      setListings([])
     } finally {
       setLoading(false)
     }
@@ -75,18 +91,16 @@ export default function HomePage() {
 
   return (
     <div className="space-y-6">
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold">Zuvi 租房平台</h1>
-        <p className="text-muted-foreground text-lg">基於憑證驗證的去中心化租房平台</p>
-      </div>
-
-      <div className="flex flex-col sm:flex-row gap-4 items-center">
-        <Input
-          placeholder="搜尋地址或房源標題..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="flex-1"
-        />
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="搜尋地址或房源標題"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
         
         <Select value={sortBy} onValueChange={setSortBy}>
           <SelectTrigger className="w-32">
@@ -115,12 +129,11 @@ export default function HomePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
             <Card key={i} className="animate-pulse">
-              <CardHeader>
-                <div className="h-48 bg-muted rounded-md"></div>
-              </CardHeader>
-              <CardContent className="space-y-2">
+              <div className="h-48 bg-muted"></div>
+              <CardContent className="p-4 space-y-2">
                 <div className="h-4 bg-muted rounded w-3/4"></div>
                 <div className="h-4 bg-muted rounded w-1/2"></div>
+                <div className="h-6 bg-muted rounded w-1/3"></div>
               </CardContent>
             </Card>
           ))}
@@ -129,7 +142,7 @@ export default function HomePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredListings.map((listing) => (
             <Card key={listing.publicKey} className="overflow-hidden hover:shadow-lg transition-shadow">
-              <CardHeader className="p-0">
+              <div className="relative">
                 {listing.metadata?.media?.images?.[listing.metadata.media.primary_image || 0] ? (
                   <img
                     src={`https://indigo-definite-coyote-168.mypinata.cloud/ipfs/${listing.metadata.media.images[listing.metadata.media.primary_image || 0]}`}
@@ -141,21 +154,21 @@ export default function HomePage() {
                     <Home className="h-12 w-12 text-muted-foreground" />
                   </div>
                 )}
-              </CardHeader>
-              
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-lg truncate">
-                    {listing.metadata?.basic?.title || '房源'}
-                  </h3>
+                <div className="absolute top-2 right-2">
                   <Badge variant={listing.status === 0 ? "default" : "secondary"}>
                     {listing.status === 0 ? "可租" : "已租"}
                   </Badge>
                 </div>
+              </div>
+              
+              <CardContent className="p-4 space-y-3">
+                <h3 className="font-semibold text-lg truncate">
+                  {listing.metadata?.basic?.title || '房源'}
+                </h3>
                 
-                <div className="flex items-center text-muted-foreground">
-                  <MapPin className="h-4 w-4 mr-1" />
-                  <span className="text-sm truncate">{listing.address}</span>
+                <div className="flex items-center text-muted-foreground text-sm">
+                  <MapPin className="h-4 w-4 mr-1 flex-shrink-0" />
+                  <span className="truncate">{listing.address}</span>
                 </div>
                 
                 {listing.metadata?.features && (
@@ -168,10 +181,12 @@ export default function HomePage() {
                       <Bath className="h-4 w-4 mr-1" />
                       <span>{listing.metadata.features.bathroom}衛</span>
                     </div>
-                    <div className="flex items-center">
-                      <Home className="h-4 w-4 mr-1" />
-                      <span>{listing.metadata?.basic?.area}坪</span>
-                    </div>
+                    {listing.metadata?.basic?.area && (
+                      <div className="flex items-center">
+                        <Home className="h-4 w-4 mr-1" />
+                        <span>{listing.metadata.basic.area}坪</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 
@@ -180,7 +195,7 @@ export default function HomePage() {
                     ${formatPrice(listing.rent)} USDC
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    押金: ${formatPrice(listing.deposit)} USDC
+                    押金 ${formatPrice(listing.deposit)} USDC
                   </div>
                 </div>
               </CardContent>

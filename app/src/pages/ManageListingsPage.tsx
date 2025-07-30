@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useWallet } from '@solana/wallet-adapter-react'
-import { Connection, Transaction } from '@solana/web3.js'
+import { useState, useEffect, useCallback } from 'react'
+import { Transaction } from '@solana/web3.js'
 import { MapPin, Bed, Bath, Home, Edit, Eye, Users, Upload, X } from 'lucide-react'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuthStore } from '@/stores/authStore'
+import { useTransaction } from '@/hooks'
 import { toast } from 'sonner'
 
 interface Listing {
@@ -105,7 +105,28 @@ const BILLING_OPTIONS = [
 
 export default function ManageListingsPage() {
   const { user } = useAuthStore()
-  const { signTransaction } = useWallet()
+  
+  const {
+    executeTransaction: executeToggle,
+    isLoading: isToggling
+  } = useTransaction({
+    onSuccess: () => {
+      toast.success('房源狀態更新成功')
+      fetchMyListings()
+    }
+  })
+
+  const {
+    executeTransaction: executeUpdate,
+    isLoading: isUpdating
+  } = useTransaction({
+    onSuccess: () => {
+      toast.success('房源更新成功')
+      setEditingListing(null)
+      setEditFormData(null)
+      fetchMyListings()
+    }
+  })
   
   const [listings, setListings] = useState<Listing[]>([])
   const [loading, setLoading] = useState(true)
@@ -113,7 +134,6 @@ export default function ManageListingsPage() {
   const [editFormData, setEditFormData] = useState<EditFormData | null>(null)
   const [applications, setApplications] = useState<Record<string, Application[]>>({})
   const [uploading, setUploading] = useState(false)
-  const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
     if (user?.publicKey) {
@@ -162,9 +182,7 @@ export default function ManageListingsPage() {
     }
   }
 
-  const toggleListingStatus = async (listing: Listing) => {
-    if (!signTransaction) return
-
+  const toggleListingStatus = useCallback(async (listing: Listing) => {
     try {
       const response = await fetch(`/api/listings/${listing.publicKey}/toggle`, {
         method: 'POST',
@@ -177,24 +195,14 @@ export default function ManageListingsPage() {
       if (!response.ok) throw new Error('Failed to toggle listing')
 
       const { transaction: serializedTx } = await response.json()
-      const connection = new Connection(process.env.NODE_ENV === 'development' 
-        ? 'https://api.devnet.solana.com' 
-        : 'https://api.mainnet-beta.solana.com'
-      )
-      
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
-      const signedTx = await signTransaction(tx)
-      const signature = await connection.sendRawTransaction(signedTx.serialize())
       
-      await connection.confirmTransaction(signature, 'confirmed')
-      
-      toast.success(listing.status === 0 ? '房源已下架' : '房源已上架')
-      fetchMyListings()
+      await executeToggle(tx)
     } catch (error) {
       console.error('Error toggling listing:', error)
       toast.error('操作失敗')
     }
-  }
+  }, [executeToggle])
 
   const startEdit = (listing: Listing) => {
     setEditingListing(listing)
@@ -280,12 +288,10 @@ export default function ManageListingsPage() {
     }
   }
 
-  const handleUpdate = async () => {
-    if (!editFormData || !editingListing || !signTransaction) return
+  const handleUpdate = useCallback(async () => {
+    if (!editFormData || !editingListing) return
 
     try {
-      setUpdating(true)
-
       const metadata = {
         version: '1.0',
         basic: {
@@ -350,29 +356,15 @@ export default function ManageListingsPage() {
       }
 
       const { transaction: serializedTx } = await response.json()
-      const connection = new Connection(process.env.NODE_ENV === 'development' 
-        ? 'https://api.devnet.solana.com' 
-        : 'https://api.mainnet-beta.solana.com'
-      )
-      
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
-      const signedTx = await signTransaction(tx)
-      const signature = await connection.sendRawTransaction(signedTx.serialize())
       
-      await connection.confirmTransaction(signature, 'confirmed')
-      
-      toast.success('房源更新成功！')
-      setEditingListing(null)
-      setEditFormData(null)
-      fetchMyListings()
+      await executeUpdate(tx)
 
     } catch (error) {
       console.error('Error updating listing:', error)
       toast.error(error instanceof Error ? error.message : '更新失敗')
-    } finally {
-      setUpdating(false)
     }
-  }
+  }, [editFormData, editingListing, executeUpdate])
 
   const formatPrice = (price: string) => {
     const num = parseInt(price) / 1_000_000
@@ -516,9 +508,9 @@ export default function ManageListingsPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => toggleListingStatus(listing)}
-                    disabled={listing.status === 1}
+                    disabled={listing.status === 1 || isToggling}
                   >
-                    {listing.status === 0 ? '下架' : '上架'}
+                    {isToggling ? '處理中...' : listing.status === 0 ? '下架' : '上架'}
                   </Button>
 
                   <Button
@@ -907,9 +899,9 @@ export default function ManageListingsPage() {
             </Button>
             <Button
               onClick={handleUpdate}
-              disabled={updating || !editFormData}
+              disabled={isUpdating || !editFormData}
             >
-              {updating ? '更新中...' : '確認更新'}
+              {isUpdating ? '更新中...' : '確認更新'}
             </Button>
           </DialogFooter>
         </DialogContent>

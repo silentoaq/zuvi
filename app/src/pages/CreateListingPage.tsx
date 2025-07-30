@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Copy, CheckCircle, Clock, Building, Eye, EyeOff, Upload, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -13,9 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useAuthStore } from '@/stores/authStore'
+import { useTransaction } from '@/hooks'
 import { toast } from 'sonner'
-import { useWallet } from '@solana/wallet-adapter-react'
-import { Connection, Transaction } from '@solana/web3.js'
+import { Transaction } from '@solana/web3.js'
 
 interface PropertyCredential {
   address: string
@@ -82,7 +82,18 @@ const BILLING_OPTIONS = [
 
 export default function CreateListingPage() {
   const { user } = useAuthStore()
-  const { publicKey, signTransaction } = useWallet()
+  
+  const {
+    executeTransaction,
+    isLoading: publishing
+  } = useTransaction({
+    onSuccess: () => {
+      toast.success('房源發布成功！')
+      setTimeout(() => {
+        window.location.href = '/'
+      }, 2000)
+    }
+  })
   
   const [selectedCredential, setSelectedCredential] = useState<PropertyCredential | null>(null)
   const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set())
@@ -92,7 +103,6 @@ export default function CreateListingPage() {
   const [disclosureStatus, setDisclosureStatus] = useState<DisclosureStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [publishing, setPublishing] = useState(false)
   
   const [formData, setFormData] = useState<ListingFormData>({
     title: '',
@@ -415,15 +425,13 @@ export default function CreateListingPage() {
     }
   }
 
-  const handlePublish = async () => {
-    if (!selectedCredential || !disclosureStatus?.disclosedData || !publicKey || !signTransaction) {
+  const handlePublish = useCallback(async () => {
+    if (!selectedCredential || !disclosureStatus?.disclosedData) {
       toast.error('缺少必要資訊，請重新開始')
       return
     }
 
     try {
-      setPublishing(true)
-
       const metadata = {
         version: '1.0',
         basic: {
@@ -478,30 +486,15 @@ export default function CreateListingPage() {
       }
 
       const { transaction: serializedTx } = await response.json()
-      const connection = new Connection(process.env.NODE_ENV === 'development' 
-        ? 'https://api.devnet.solana.com' 
-        : 'https://api.mainnet-beta.solana.com'
-      )
-      
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
-      const signedTx = await signTransaction(tx)
-      const signature = await connection.sendRawTransaction(signedTx.serialize())
       
-      await connection.confirmTransaction(signature, 'confirmed')
-      
-      toast.success('房源發布成功！')
-      
-      setTimeout(() => {
-        window.location.href = '/'
-      }, 2000)
+      await executeTransaction(tx)
 
     } catch (error) {
       console.error('Error publishing listing:', error)
       toast.error(error instanceof Error ? error.message : '發布失敗，請稍後再試')
-    } finally {
-      setPublishing(false)
     }
-  }
+  }, [selectedCredential, disclosureStatus, formData, executeTransaction])
 
   const getHouseTypeLabel = (value: string) => {
     return HOUSE_TYPES.find(t => t.value === value)?.label || value

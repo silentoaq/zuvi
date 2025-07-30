@@ -705,6 +705,13 @@ export default function CreateListingPage() {
                           此憑證已用於刊登房源，無法重複使用
                         </div>
                       )}
+
+                        {selectedCredential?.address === credential.address && !isUsed && (
+                        <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded">
+                          將揭露：房產地址、建物面積、使用類型
+                        </div>
+                      )}
+
                     </CardContent>
                   </Card>
                 )

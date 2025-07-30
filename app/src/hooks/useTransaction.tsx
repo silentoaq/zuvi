@@ -3,9 +3,18 @@ import { useWallet } from '@solana/wallet-adapter-react'
 import { Connection, Transaction, TransactionInstruction } from '@solana/web3.js'
 import { toast } from 'sonner'
 
+export type TransactionStep = 
+  | 'preparing'
+  | 'signing' 
+  | 'sending'
+  | 'confirming'
+  | 'confirmed'
+  | 'error'
+
 interface UseTransactionOptions {
   onSuccess?: (signature: string) => void
   onError?: (error: Error) => void
+  onStepChange?: (step: TransactionStep) => void
   maxRetries?: number
   skipPreflight?: boolean
   commitment?: 'processed' | 'confirmed' | 'finalized'
@@ -15,6 +24,7 @@ interface TransactionState {
   isLoading: boolean
   error: string | null
   signature: string | null
+  step: TransactionStep | null
 }
 
 export const useTransaction = (options: UseTransactionOptions = {}) => {
@@ -22,7 +32,8 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
   const [state, setState] = useState<TransactionState>({
     isLoading: false,
     error: null,
-    signature: null
+    signature: null,
+    step: null
   })
   
   const isProcessingRef = useRef(false)
@@ -33,18 +44,19 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
   const {
     onSuccess,
     onError,
+    onStepChange,
     maxRetries = 2,
     skipPreflight = false,
     commitment = 'confirmed'
   } = options
 
+  const updateStep = useCallback((step: TransactionStep) => {
+    setState(prev => ({ ...prev, step }))
+    onStepChange?.(step)
+  }, [onStepChange])
+
   const getConnection = useCallback(() => {
-    return new Connection(
-      process.env.NODE_ENV === 'development' 
-        ? 'https://api.devnet.solana.com' 
-        : 'https://api.mainnet-beta.solana.com',
-      commitment
-    )
+    return new Connection('https://api.devnet.solana.com', commitment)
   }, [commitment])
 
   const getTransactionId = useCallback((transaction: Transaction): string => {
@@ -63,18 +75,17 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
         throw new Error('Transaction was cancelled')
       }
 
-      // 生成交易ID以防止重複
       const transactionId = getTransactionId(transaction)
       
-      // 檢查是否已經處理過這筆交易
       if (processedTransactionsRef.current.has(transactionId)) {
         throw new Error('Transaction already in progress')
       }
 
-      // 標記交易為處理中
       processedTransactionsRef.current.add(transactionId)
 
       try {
+        updateStep('preparing')
+        
         const needsBlockhash = !transaction.recentBlockhash
         const needsFeePayer = !transaction.feePayer
 
@@ -95,12 +106,14 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
           throw new Error('Wallet not connected or does not support signing')
         }
 
+        updateStep('signing')
         const signedTransaction = await signTransaction(transaction)
         
         if (abortControllerRef.current?.signal.aborted) {
           throw new Error('Transaction was cancelled')
         }
 
+        updateStep('sending')
         const signature = await connection.sendRawTransaction(
           signedTransaction.serialize(),
           {
@@ -109,9 +122,9 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
           }
         )
 
-        // 記錄最後的交易簽名
         lastTransactionRef.current = signature
 
+        updateStep('confirming')
         const confirmationBlockhash = transaction.recentBlockhash!
         const confirmationHeight = transaction.lastValidBlockHeight || undefined
 
@@ -125,10 +138,10 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
           await connection.confirmTransaction(signature, commitment)
         }
 
+        updateStep('confirmed')
         return signature
 
       } finally {
-        // 清除處理標記
         processedTransactionsRef.current.delete(transactionId)
       }
 
@@ -139,14 +152,13 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
         throw new Error('Transaction was cancelled')
       }
 
-      // 檢查是否為重複交易錯誤
       const isDuplicateError = 
         error.message?.includes('This transaction has already been processed') ||
         error.message?.includes('Transaction already in progress')
 
-      // 如果是重複交易且有最後的簽名，視為成功
       if (isDuplicateError && lastTransactionRef.current) {
         console.log('Transaction already processed, using cached signature:', lastTransactionRef.current)
+        updateStep('confirmed')
         return lastTransactionRef.current
       }
 
@@ -164,7 +176,6 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
         error.message?.includes('WalletSignTransactionError') ||
         error.message?.includes('Unexpected error')
 
-      // 對於簽名錯誤，嘗試清除參數重試一次
       if (isSignatureError && retryCount === 0) {
         const cleanTransaction = Transaction.from(transaction.serialize({ requireAllSignatures: false }))
         cleanTransaction.recentBlockhash = undefined
@@ -175,7 +186,6 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
         return sendTransactionWithRetry(cleanTransaction, retryCount + 1)
       }
 
-      // 對於區塊哈希或網絡錯誤進行重試
       if ((isBlockhashError || isNetworkError) && retryCount < maxRetries) {
         console.log(`Retrying transaction (${retryCount + 1}/${maxRetries})...`)
         
@@ -189,14 +199,14 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
         return sendTransactionWithRetry(transaction, retryCount + 1)
       }
 
+      updateStep('error')
       throw error
     }
-  }, [signTransaction, publicKey, commitment, skipPreflight, maxRetries, getConnection, getTransactionId])
+  }, [signTransaction, publicKey, commitment, skipPreflight, maxRetries, getConnection, getTransactionId, updateStep])
 
   const executeTransaction = useCallback(async (
     transactionOrInstructions: Transaction | TransactionInstruction[]
   ) => {
-    // 防止重複執行
     if (isProcessingRef.current) {
       console.warn('Transaction already in progress, ignoring duplicate request')
       return lastTransactionRef.current
@@ -208,7 +218,8 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
     setState({
       isLoading: true,
       error: null,
-      signature: null
+      signature: null,
+      step: 'preparing'
     })
 
     try {
@@ -230,7 +241,8 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
       setState({
         isLoading: false,
         error: null,
-        signature
+        signature,
+        step: 'confirmed'
       })
 
       onSuccess?.(signature)
@@ -239,12 +251,12 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
     } catch (error: any) {
       let errorMessage = error.message || 'Transaction failed'
       
-      // 對於重複交易錯誤，如果有簽名則視為成功
       if (errorMessage.includes('This transaction has already been processed') && lastTransactionRef.current) {
         setState({
           isLoading: false,
           error: null,
-          signature: lastTransactionRef.current
+          signature: lastTransactionRef.current,
+          step: 'confirmed'
         })
         onSuccess?.(lastTransactionRef.current)
         return lastTransactionRef.current
@@ -253,7 +265,8 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
       setState({
         isLoading: false,
         error: errorMessage,
-        signature: null
+        signature: null,
+        step: 'error'
       })
 
       console.error('Transaction failed:', error)
@@ -283,7 +296,8 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
     setState({
       isLoading: false,
       error: null,
-      signature: null
+      signature: null,
+      step: null
     })
   }, [])
 
@@ -292,6 +306,7 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
     reset,
     isLoading: state.isLoading,
     error: state.error,
-    signature: state.signature
+    signature: state.signature,
+    step: state.step
   }
 }

@@ -86,6 +86,30 @@ export class CredentialService {
     }
   }
 
+  static async createCitizenDisclosure(
+    publicKey: string,
+    credentialId: string,
+    requiredFields: string[]
+  ): Promise<{ vpRequestUri: string; requestId: string }> {
+    try {
+      const did = `did:pkh:sol:${publicKey}`;
+      const request = await getSDK().createDisclosureRequest({
+        holderDid: did,
+        credentialType: 'CitizenCredential',
+        credentialId,
+        requiredFields,
+        purpose: '租房平台租賃申請驗證'
+      });
+
+      return {
+        vpRequestUri: request.vpRequestUri,
+        requestId: request.requestId
+      };
+    } catch (error) {
+      throw new Error(`Failed to create citizen disclosure: ${error}`);
+    }
+  }
+
   static async getDisclosureStatus(requestId: string): Promise<{
     status: 'pending' | 'completed' | 'expired';
     disclosedData?: any;
@@ -112,7 +136,7 @@ export class CredentialService {
     return Math.round(area);
   }
 
-  static async validateDisclosureData(
+  static async validatePropertyDisclosureData(
     publicKey: string,
     credentialId: string,
     disclosedData: any
@@ -142,6 +166,34 @@ export class CredentialService {
           ...disclosedData,
           building_area: parsedBuildingArea
         },
+        credentialId
+      };
+
+      const cacheKey = `disclosure:${publicKey}:${credentialId}`;
+      cache.set(cacheKey, result, 600);
+
+      return result;
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown validation error' 
+      };
+    }
+  }
+
+  static async validateCitizenDisclosureData(
+    publicKey: string,
+    credentialId: string,
+    disclosedData: any
+  ): Promise<DisclosureResult> {
+    try {
+      if (!disclosedData?.birth_date || !disclosedData?.gender) {
+        return { success: false, error: 'Missing required fields: birth_date or gender' };
+      }
+
+      const result = {
+        success: true,
+        data: disclosedData,
         credentialId
       };
 

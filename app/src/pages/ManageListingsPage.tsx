@@ -429,10 +429,6 @@ export default function ManageListingsPage() {
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold">管理房源</h1>
-          <p className="text-muted-foreground">管理您的房源和申請</p>
-        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(3)].map((_, i) => (
             <Card key={i} className="animate-pulse">

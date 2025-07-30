@@ -64,6 +64,11 @@ interface ListingFormData {
   uploadedImages: UploadedImage[]
 }
 
+interface ExistingListing {
+  publicKey: string
+  propertyAttest: string
+}
+
 const HOUSE_TYPES = [
   { value: 'entire', label: '整層住家' },
   { value: 'suite', label: '套房' },
@@ -103,6 +108,8 @@ export default function CreateListingPage() {
   const [disclosureStatus, setDisclosureStatus] = useState<DisclosureStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [existingListings, setExistingListings] = useState<ExistingListing[]>([])
+  const [loadingExistingListings, setLoadingExistingListings] = useState(true)
   
   const [formData, setFormData] = useState<ListingFormData>({
     title: '',
@@ -128,11 +135,42 @@ export default function CreateListingPage() {
 
   useEffect(() => {
     clearAllTempImages()
+    if (user?.publicKey) {
+      fetchExistingListings()
+    }
     
     return () => {
       clearAllTempImages()
     }
-  }, [])
+  }, [user?.publicKey])
+
+  const fetchExistingListings = async () => {
+    try {
+      setLoadingExistingListings(true)
+      const response = await fetch(`/api/listings?owner=${user?.publicKey}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        const listings = data.listings || []
+        setExistingListings(listings.map((listing: any) => ({
+          publicKey: listing.publicKey,
+          propertyAttest: listing.propertyAttest
+        })))
+      }
+    } catch (error) {
+      console.error('Error fetching existing listings:', error)
+    } finally {
+      setLoadingExistingListings(false)
+    }
+  }
+
+  const isCredentialUsed = (credentialAddress: string) => {
+    return existingListings.some(listing => listing.propertyAttest === credentialAddress)
+  }
 
   const clearAllTempImages = async () => {
     try {
@@ -183,6 +221,9 @@ export default function CreateListingPage() {
   }
 
   const handleSelectCredential = (credential: PropertyCredential) => {
+    if (isCredentialUsed(credential.address)) {
+      return
+    }
     setSelectedCredential(credential)
   }
 
@@ -541,91 +582,135 @@ export default function CreateListingPage() {
             </AlertDescription>
           </Alert>
 
-          <div className="grid gap-4">
-            {propertyCredentials.map((credential, index) => (
-              <Card 
-                key={credential.address} 
-                className={`cursor-pointer transition-colors ${
-                  selectedCredential?.address === credential.address 
-                    ? 'ring-2 ring-primary' 
-                    : 'hover:bg-muted/50'
-                }`}
-                onClick={() => handleSelectCredential(credential)}
-              >
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg">房產憑證 #{index + 1}</CardTitle>
-                    <Badge variant="outline">
-                      {new Date(credential.expiry * 1000) > new Date() ? '有效' : '已過期'}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-muted-foreground">憑證地址</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            toggleExpanded(`address-${credential.address}`)
-                          }}
-                          className="h-6 w-6 p-0"
-                        >
-                          {expandedFields.has(`address-${credential.address}`) ? 
-                            <EyeOff className="h-3 w-3" /> : 
-                            <Eye className="h-3 w-3" />
-                          }
-                        </Button>
-                      </div>
-                      <div className="font-mono text-xs bg-muted p-2 rounded break-all">
-                        {formatDisplayText(credential.address, `address-${credential.address}`)}
-                      </div>
+          {loadingExistingListings ? (
+            <div className="grid gap-4">
+              {[...Array(2)].map((_, index) => (
+                <Card key={index} className="animate-pulse">
+                  <CardHeader>
+                    <div className="h-6 bg-muted rounded w-1/2"></div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="h-4 bg-muted rounded w-3/4"></div>
+                      <div className="h-4 bg-muted rounded w-1/2"></div>
                     </div>
-                    
-                    <div>
-                      <span className="text-muted-foreground">憑證ID</span>
-                      <div className="font-mono text-xs bg-muted p-2 rounded mt-1 break-all">
-                        {credential.data.credentialReference}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {propertyCredentials.map((credential, index) => {
+                const isUsed = isCredentialUsed(credential.address)
+                const isExpired = new Date(credential.expiry * 1000) <= new Date()
+                const isDisabled = isUsed || isExpired
+                
+                return (
+                  <Card 
+                    key={credential.address} 
+                    className={`transition-all ${
+                      isDisabled 
+                        ? 'opacity-50 cursor-not-allowed bg-muted/30' 
+                        : selectedCredential?.address === credential.address 
+                          ? 'ring-2 ring-primary cursor-pointer' 
+                          : 'hover:bg-muted/50 cursor-pointer'
+                    }`}
+                    onClick={() => handleSelectCredential(credential)}
+                  >
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg">房產憑證 #{index + 1}</CardTitle>
+                        <div className="flex items-center gap-2">
+                          {isUsed && (
+                            <Badge variant="destructive">已刊登</Badge>
+                          )}
+                          {isExpired && (
+                            <Badge variant="secondary">已過期</Badge>
+                          )}
+                          {!isDisabled && (
+                            <Badge variant="outline">
+                              {new Date(credential.expiry * 1000) > new Date() ? '有效' : '已過期'}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-muted-foreground">Merkle Root</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            toggleExpanded(`merkle-${credential.data.merkleRoot}`)
-                          }}
-                          className="h-6 w-6 p-0"
-                        >
-                          {expandedFields.has(`merkle-${credential.data.merkleRoot}`) ? 
-                            <EyeOff className="h-3 w-3" /> : 
-                            <Eye className="h-3 w-3" />
-                          }
-                        </Button>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-muted-foreground">憑證地址</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                toggleExpanded(`address-${credential.address}`)
+                              }}
+                              className="h-6 w-6 p-0"
+                              disabled={isDisabled}
+                            >
+                              {expandedFields.has(`address-${credential.address}`) ? 
+                                <EyeOff className="h-3 w-3" /> : 
+                                <Eye className="h-3 w-3" />
+                              }
+                            </Button>
+                          </div>
+                          <div className="font-mono text-xs bg-muted p-2 rounded break-all">
+                            {formatDisplayText(credential.address, `address-${credential.address}`)}
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <span className="text-muted-foreground">憑證ID</span>
+                          <div className="font-mono text-xs bg-muted p-2 rounded mt-1 break-all">
+                            {credential.data.credentialReference}
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-muted-foreground">Merkle Root</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                toggleExpanded(`merkle-${credential.data.merkleRoot}`)
+                              }}
+                              className="h-6 w-6 p-0"
+                              disabled={isDisabled}
+                            >
+                              {expandedFields.has(`merkle-${credential.data.merkleRoot}`) ? 
+                                <EyeOff className="h-3 w-3" /> : 
+                                <Eye className="h-3 w-3" />
+                              }
+                            </Button>
+                          </div>
+                          <div className="font-mono text-xs bg-muted p-2 rounded break-all">
+                            {formatDisplayText(credential.data.merkleRoot, `merkle-${credential.data.merkleRoot}`)}
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <span className="text-muted-foreground">到期日</span>
+                          <div className="text-xs bg-muted p-2 rounded mt-1">
+                            {formatExpiry(credential.expiry)}
+                          </div>
+                        </div>
                       </div>
-                      <div className="font-mono text-xs bg-muted p-2 rounded break-all">
-                        {formatDisplayText(credential.data.merkleRoot, `merkle-${credential.data.merkleRoot}`)}
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <span className="text-muted-foreground">到期日</span>
-                      <div className="text-xs bg-muted p-2 rounded mt-1">
-                        {formatExpiry(credential.expiry)}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                      
+                      {isUsed && (
+                        <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded border-l-4 border-destructive">
+                          此憑證已用於刊登房源，無法重複使用
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
 
           {selectedCredential && (
             <div className="flex justify-center">

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from '@/components/ui/carousel'
 import { useAuthStore } from '@/stores/authStore'
 
 interface Listing {
@@ -52,7 +53,6 @@ export default function ListingDetailPage() {
   const { user } = useAuthStore()
   const [listing, setListing] = useState<Listing | null>(null)
   const [loading, setLoading] = useState(true)
-  const [currentImageIndex, setCurrentImageIndex] = useState(0)
 
   useEffect(() => {
     if (id) {
@@ -122,22 +122,36 @@ export default function ListingDetailPage() {
     <div className="space-y-6">
       {images.length > 0 && (
         <div className="relative">
-          <img
-            src={`https://indigo-definite-coyote-168.mypinata.cloud/ipfs/${images[currentImageIndex]}`}
-            alt={listing.metadata?.basic?.title}
-            className="w-full h-64 lg:h-96 object-cover rounded-lg"
-          />
-          {images.length > 1 && (
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2">
-              {images.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => setCurrentImageIndex(index)}
-                  className={`w-3 h-3 rounded-full ${
-                    index === currentImageIndex ? 'bg-white' : 'bg-white/50'
-                  }`}
-                />
-              ))}
+          {images.length > 1 ? (
+            <Carousel className="w-full">
+              <CarouselContent>
+                {images.map((image, index) => (
+                  <CarouselItem key={index}>
+                    <div className="relative">
+                      <img
+                        src={`https://indigo-definite-coyote-168.mypinata.cloud/ipfs/${image}`}
+                        alt={`${listing.metadata?.basic?.title} - 圖片 ${index + 1}`}
+                        className="w-full h-64 lg:h-96 object-cover rounded-lg"
+                      />
+                      {index === (listing.metadata?.media?.primary_image || 0) && (
+                        <div className="absolute top-4 left-4 bg-primary text-primary-foreground text-sm px-3 py-1 rounded-full">
+                          主要照片
+                        </div>
+                      )}
+                    </div>
+                  </CarouselItem>
+                ))}
+              </CarouselContent>
+              <CarouselPrevious className="left-4" />
+              <CarouselNext className="right-4" />
+            </Carousel>
+          ) : (
+            <div className="relative">
+              <img
+                src={`https://indigo-definite-coyote-168.mypinata.cloud/ipfs/${images[0]}`}
+                alt={listing.metadata?.basic?.title}
+                className="w-full h-64 lg:h-96 object-cover rounded-lg"
+              />
             </div>
           )}
         </div>

@@ -65,6 +65,7 @@ interface UploadedImage {
   filename: string
   ipfsHash: string
   gatewayUrl: string
+  isExisting?: boolean
 }
 
 interface EditFormData {
@@ -85,6 +86,7 @@ interface EditFormData {
   electricityBilling: string
   description: string
   uploadedImages: UploadedImage[]
+  existingImages: UploadedImage[]
 }
 
 const HOUSE_TYPES = [
@@ -206,6 +208,15 @@ export default function ManageListingsPage() {
 
   const startEdit = (listing: Listing) => {
     setEditingListing(listing)
+    
+    const existingImages: UploadedImage[] = listing.metadata?.media?.images?.map((ipfsHash, index) => ({
+      id: `existing-${index}`,
+      filename: `image-${index + 1}.jpg`,
+      ipfsHash,
+      gatewayUrl: `https://indigo-definite-coyote-168.mypinata.cloud/ipfs/${ipfsHash}`,
+      isExisting: true
+    })) || []
+
     setEditFormData({
       title: listing.metadata?.basic?.title || '',
       type: getTypeValue(listing.metadata?.basic?.type || ''),
@@ -223,7 +234,8 @@ export default function ManageListingsPage() {
       waterBilling: getBillingValue(listing.metadata?.rules?.utilities?.water || ''),
       electricityBilling: getBillingValue(listing.metadata?.rules?.utilities?.electricity || ''),
       description: listing.metadata?.description || '',
-      uploadedImages: []
+      uploadedImages: [],
+      existingImages
     })
   }
 
@@ -231,8 +243,10 @@ export default function ManageListingsPage() {
     if (!files || files.length === 0) return
     
     const newImages = Array.from(files).filter(file => file.type.startsWith('image/'))
-    if (newImages.length + editFormData!.uploadedImages.length > 10) {
-      toast.error('最多只能上傳10張照片')
+    const totalImages = editFormData!.existingImages.length + editFormData!.uploadedImages.length + newImages.length
+    
+    if (totalImages > 10) {
+      toast.error('最多只能有10張照片')
       return
     }
     
@@ -268,7 +282,7 @@ export default function ManageListingsPage() {
     }
   }
 
-  const removeImage = async (index: number) => {
+  const removeUploadedImage = async (index: number) => {
     const imageToRemove = editFormData!.uploadedImages[index]
     
     setEditFormData(prev => ({
@@ -288,10 +302,19 @@ export default function ManageListingsPage() {
     }
   }
 
+  const removeExistingImage = (index: number) => {
+    setEditFormData(prev => ({
+      ...prev!,
+      existingImages: prev!.existingImages.filter((_, i) => i !== index)
+    }))
+  }
+
   const handleUpdate = useCallback(async () => {
     if (!editFormData || !editingListing) return
 
     try {
+      const allImages = [...editFormData.existingImages, ...editFormData.uploadedImages]
+      
       const metadata = {
         version: '1.0',
         basic: {
@@ -315,7 +338,11 @@ export default function ManageListingsPage() {
             electricity: BILLING_OPTIONS.find(b => b.value === editFormData.electricityBilling)?.label || editFormData.electricityBilling
           }
         },
-        description: editFormData.description
+        description: editFormData.description,
+        media: {
+          images: allImages.map(img => img.ipfsHash),
+          primary_image: 0
+        }
       }
 
       const requestBody: any = {}
@@ -331,7 +358,14 @@ export default function ManageListingsPage() {
         requestBody.deposit = editFormData.deposit * 1_000_000
       }
 
-      if (editFormData.uploadedImages.length > 0 || JSON.stringify(metadata) !== JSON.stringify(editingListing.metadata)) {
+      const hasImageChanges = 
+        editFormData.uploadedImages.length > 0 || 
+        editFormData.existingImages.length !== (editingListing.metadata?.media?.images?.length || 0) ||
+        !editFormData.existingImages.every((img, index) => 
+          img.ipfsHash === editingListing.metadata?.media?.images?.[index]
+        )
+
+      if (hasImageChanges || JSON.stringify(metadata) !== JSON.stringify(editingListing.metadata)) {
         requestBody.metadata = metadata
         requestBody.imageIds = editFormData.uploadedImages.map(img => img.id)
       }
@@ -827,59 +861,95 @@ export default function ManageListingsPage() {
               <TabsContent value="images" className="space-y-4">
                 <div>
                   <Label className="text-base font-medium">房源照片</Label>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    onChange={(e) => handleImageUpload(e.target.files)}
-                    className="hidden"
-                    id="image-upload"
-                    disabled={uploading}
-                  />
-
-                  <div className="space-y-3 mt-3">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {editFormData.uploadedImages.map((image, index) => (
-                        <div key={image.id} className="relative group">
-                          <img
-                            src={image.gatewayUrl}
-                            alt={`Preview ${index + 1}`}
-                            className="w-full h-24 object-cover rounded-lg"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement
-                              target.src = `https://indigo-definite-coyote-168.mypinata.cloud/ipfs/${image.ipfsHash}`
-                            }}
-                          />
-                          {index === 0 && (
-                            <div className="absolute top-1 left-1 bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded">
-                              主圖
+                  
+                  <div className="space-y-6 mt-3">
+                    {editFormData.existingImages.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-muted-foreground mb-3">現有照片</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {editFormData.existingImages.map((image, index) => (
+                            <div key={image.id} className="relative group">
+                              <img
+                                src={image.gatewayUrl}
+                                alt={`現有圖片 ${index + 1}`}
+                                className="w-full h-24 object-cover rounded-lg"
+                              />
+                              {index === 0 && (
+                                <div className="absolute top-1 left-1 bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded">
+                                  主圖
+                                </div>
+                              )}
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                className="absolute -top-2 -right-2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => removeExistingImage(index)}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
                             </div>
-                          )}
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            className="absolute -top-2 -right-2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => removeImage(index)}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
+                          ))}
                         </div>
-                      ))}
+                      </div>
+                    )}
+
+                    {editFormData.uploadedImages.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-muted-foreground mb-3">新上傳照片</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {editFormData.uploadedImages.map((image, index) => (
+                            <div key={image.id} className="relative group">
+                              <img
+                                src={image.gatewayUrl}
+                                alt={`新圖片 ${index + 1}`}
+                                className="w-full h-24 object-cover rounded-lg"
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement
+                                  target.src = `https://indigo-definite-coyote-168.mypinata.cloud/ipfs/${image.ipfsHash}`
+                                }}
+                              />
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                className="absolute -top-2 -right-2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => removeUploadedImage(index)}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <h4 className="text-sm font-medium text-muted-foreground mb-3">新增照片</h4>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={(e) => handleImageUpload(e.target.files)}
+                        className="hidden"
+                        id="image-upload"
+                        disabled={uploading}
+                      />
                       
-                      {editFormData.uploadedImages.length < 10 && (
-                        <Label htmlFor="image-upload" className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                          <div className="w-full h-24 border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center hover:border-muted-foreground/50 transition-colors">
-                            <Upload className="h-6 w-6 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground mt-1">
-                              {uploading ? '上傳中...' : '添加照片'}
-                            </span>
-                          </div>
-                        </Label>
-                      )}
-                    </div>
-                    
-                    <div className="text-xs text-muted-foreground">
-                      已上傳 {editFormData.uploadedImages.length} / 10 張照片
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {(editFormData.existingImages.length + editFormData.uploadedImages.length) < 10 && (
+                          <Label htmlFor="image-upload" className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                            <div className="w-full h-24 border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center hover:border-muted-foreground/50 transition-colors">
+                              <Upload className="h-6 w-6 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground mt-1">
+                                {uploading ? '上傳中...' : '添加照片'}
+                              </span>
+                            </div>
+                          </Label>
+                        )}
+                      </div>
+                      
+                      <div className="text-xs text-muted-foreground mt-2">
+                        已有 {editFormData.existingImages.length + editFormData.uploadedImages.length} / 10 張照片
+                      </div>
                     </div>
                   </div>
                 </div>

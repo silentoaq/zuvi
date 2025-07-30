@@ -94,8 +94,8 @@ export class StorageService {
   // 將 IPFS Hash 轉換為固定長度的 bytes
   static ipfsHashToBytes(ipfsHash: string): number[] {
     const bytes = Buffer.from(ipfsHash, 'utf8');
-    const fixedBytes = new Uint8Array(46);
-    fixedBytes.set(bytes.slice(0, 46));
+    const fixedBytes = new Uint8Array(64);
+    fixedBytes.set(bytes.slice(0, 64));
     return Array.from(fixedBytes);
   }
 

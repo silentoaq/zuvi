@@ -3,31 +3,26 @@ use anchor_spl::token::{self, Token, Transfer};
 use anchor_spl::token_interface::TokenAccount;
 use crate::{constants::*, errors::*, state::*};
 
-/// 確認押金結算
 pub fn confirm_release(ctx: Context<ConfirmRelease>) -> Result<()> {
     let lease = &ctx.accounts.lease;
     let escrow = &mut ctx.accounts.escrow;
     let signer = &ctx.accounts.signer;
     
-    // 確認是租約當事人
     require!(
         signer.key() == lease.landlord || signer.key() == lease.tenant,
         ZuviError::Unauthorized
     );
     
-    // 確認狀態正確
     require!(
         escrow.status == ESCROW_STATUS_RELEASING,
         ZuviError::InvalidParameter
     );
     
-    // 確認沒有爭議
     require!(
         !escrow.has_dispute,
         ZuviError::DisputeInProgress
     );
     
-    // 確認是另一方確認
     if signer.key() == lease.landlord {
         require!(!escrow.landlord_signed, ZuviError::AlreadySigned);
         escrow.landlord_signed = true;
@@ -36,7 +31,6 @@ pub fn confirm_release(ctx: Context<ConfirmRelease>) -> Result<()> {
         escrow.tenant_signed = true;
     }
     
-    // 如果雙方都已確認，執行轉帳
     if escrow.landlord_signed && escrow.tenant_signed {
         let lease_key = lease.key();
         let escrow_seeds = &[
@@ -46,7 +40,6 @@ pub fn confirm_release(ctx: Context<ConfirmRelease>) -> Result<()> {
         ];
         let signer_seeds = &[&escrow_seeds[..]];
         
-        // 轉帳給房東
         if escrow.release_to_landlord > 0 {
             token::transfer(
                 CpiContext::new_with_signer(
@@ -62,7 +55,6 @@ pub fn confirm_release(ctx: Context<ConfirmRelease>) -> Result<()> {
             )?;
         }
         
-        // 轉帳給承租人
         if escrow.release_to_tenant > 0 {
             token::transfer(
                 CpiContext::new_with_signer(
@@ -78,7 +70,6 @@ pub fn confirm_release(ctx: Context<ConfirmRelease>) -> Result<()> {
             )?;
         }
         
-        // 更新狀態
         escrow.status = ESCROW_STATUS_RELEASED;
         
         msg!("押金已釋放");
@@ -93,17 +84,15 @@ pub fn confirm_release(ctx: Context<ConfirmRelease>) -> Result<()> {
 
 #[derive(Accounts)]
 pub struct ConfirmRelease<'info> {
-    /// 系統配置
     #[account(seeds = [CONFIG_SEED], bump)]
     pub config: Account<'info, Config>,
-    /// 租約
+    
     #[account(
-        seeds = [LEASE_SEED, lease.listing.as_ref(), lease.tenant.as_ref()],
+        seeds = [LEASE_SEED, lease.listing.as_ref(), lease.tenant.as_ref(), &lease.start_date.to_le_bytes()],
         bump
     )]
     pub lease: Account<'info, Lease>,
     
-    /// 押金託管帳戶
     #[account(
         mut,
         seeds = [ESCROW_SEED, lease.key().as_ref()],
@@ -111,10 +100,8 @@ pub struct ConfirmRelease<'info> {
     )]
     pub escrow: Account<'info, Escrow>,
     
-    /// 確認人（房東或承租人）
     pub signer: Signer<'info>,
     
-    /// Escrow Token 帳戶
     #[account(
         mut,
         constraint = escrow_token.owner == escrow.key(),
@@ -122,7 +109,6 @@ pub struct ConfirmRelease<'info> {
     )]
     pub escrow_token: InterfaceAccount<'info, TokenAccount>,
     
-    /// 房東 Token 帳戶
     #[account(
         mut,
         constraint = landlord_token.owner == lease.landlord,
@@ -130,7 +116,6 @@ pub struct ConfirmRelease<'info> {
     )]
     pub landlord_token: InterfaceAccount<'info, TokenAccount>,
     
-    /// 承租人 Token 帳戶
     #[account(
         mut,
         constraint = tenant_token.owner == lease.tenant,

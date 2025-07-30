@@ -1,21 +1,29 @@
 use anchor_lang::prelude::*;
 use crate::{constants::*, errors::*, state::*};
 
-/// 申請租賃
 pub fn apply_lease(
     ctx: Context<ApplyLease>,
     message_uri: [u8; 64],
 ) -> Result<()> {
+    let config = &ctx.accounts.config;
     let listing = &ctx.accounts.listing;
     let applicant = &ctx.accounts.applicant;
     
-    // 確認房源狀態
+    require!(
+        config.initialized,
+        ZuviError::NotInitialized
+    );
+    
+    require!(
+        ctx.accounts.api_signer.key() == config.api_signer,
+        ZuviError::ApiSignatureRequired
+    );
+    
     require!(
         listing.status == LISTING_STATUS_AVAILABLE,
         ZuviError::ListingInactive
     );
     
-    // 不能申請自己的房源
     require!(
         listing.owner != applicant.key(),
         ZuviError::CannotApplyOwnListing
@@ -24,7 +32,6 @@ pub fn apply_lease(
     let application = &mut ctx.accounts.application;
     let clock = Clock::get()?;
     
-    // 設定申請資料
     application.listing = listing.key();
     application.applicant = applicant.key();
     application.tenant_attest = ctx.accounts.tenant_attest.key();
@@ -41,14 +48,15 @@ pub fn apply_lease(
 
 #[derive(Accounts)]
 pub struct ApplyLease<'info> {
-    /// 房源列表帳戶
+    #[account(seeds = [CONFIG_SEED], bump)]
+    pub config: Account<'info, Config>,
+    
     #[account(
         seeds = [LISTING_SEED, listing.property_attest.as_ref()],
         bump
     )]
     pub listing: Account<'info, Listing>,
     
-    /// 申請帳戶
     #[account(
         init,
         payer = applicant,
@@ -58,14 +66,13 @@ pub struct ApplyLease<'info> {
     )]
     pub application: Account<'info, Application>,
     
-    /// 申請人（支付者）
     #[account(mut)]
     pub applicant: Signer<'info>,
     
-    /// 承租人憑證帳戶
+    pub api_signer: Signer<'info>,
+    
     /// CHECK: 由 API 驗證
     pub tenant_attest: AccountInfo<'info>,
     
-    /// 系統程式
     pub system_program: Program<'info, System>,
 }

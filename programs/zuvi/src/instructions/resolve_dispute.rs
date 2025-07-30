@@ -3,7 +3,6 @@ use anchor_spl::token::{self, Token, Transfer};
 use anchor_spl::token_interface::TokenAccount;
 use crate::{constants::*, errors::*, state::*};
 
-/// 解決爭議（仲裁者裁決）
 pub fn resolve_dispute(
     ctx: Context<ResolveDispute>,
     landlord_amount: u64,
@@ -14,26 +13,22 @@ pub fn resolve_dispute(
     let escrow = &mut ctx.accounts.escrow;
     let dispute = &mut ctx.accounts.dispute;
     
-    // 確認是仲裁者
     require!(
         ctx.accounts.arbitrator.key() == config.arbitrator,
         ZuviError::NotArbitrator
     );
     
-    // 確認爭議狀態
     require!(
         dispute.status == DISPUTE_STATUS_OPEN,
         ZuviError::DisputeAlreadyResolved
     );
     
-    // 確認金額總和正確
     let total = landlord_amount + tenant_amount;
     require!(
         total == escrow.amount,
         ZuviError::AmountMismatch
     );
     
-    // 執行轉帳
     let lease_key = lease.key();
     let escrow_seeds = &[
         ESCROW_SEED,
@@ -42,7 +37,6 @@ pub fn resolve_dispute(
     ];
     let signer_seeds = &[&escrow_seeds[..]];
     
-    // 轉帳給房東
     if landlord_amount > 0 {
         token::transfer(
             CpiContext::new_with_signer(
@@ -58,7 +52,6 @@ pub fn resolve_dispute(
         )?;
     }
     
-    // 轉帳給承租人
     if tenant_amount > 0 {
         token::transfer(
             CpiContext::new_with_signer(
@@ -74,7 +67,6 @@ pub fn resolve_dispute(
         )?;
     }
     
-    // 更新狀態
     escrow.status = ESCROW_STATUS_RELEASED;
     escrow.release_to_landlord = landlord_amount;
     escrow.release_to_tenant = tenant_amount;
@@ -90,18 +82,15 @@ pub fn resolve_dispute(
 
 #[derive(Accounts)]
 pub struct ResolveDispute<'info> {
-    /// 系統配置
     #[account(seeds = [CONFIG_SEED], bump)]
     pub config: Account<'info, Config>,
     
-    /// 租約
     #[account(
-        seeds = [LEASE_SEED, lease.listing.as_ref(), lease.tenant.as_ref()],
+        seeds = [LEASE_SEED, lease.listing.as_ref(), lease.tenant.as_ref(), &lease.start_date.to_le_bytes()],
         bump
     )]
     pub lease: Account<'info, Lease>,
     
-    /// 押金託管帳戶
     #[account(
         mut,
         seeds = [ESCROW_SEED, lease.key().as_ref()],
@@ -109,7 +98,6 @@ pub struct ResolveDispute<'info> {
     )]
     pub escrow: Account<'info, Escrow>,
     
-    /// 爭議帳戶
     #[account(
         mut,
         seeds = [DISPUTE_SEED, lease.key().as_ref()],
@@ -117,10 +105,8 @@ pub struct ResolveDispute<'info> {
     )]
     pub dispute: Account<'info, Dispute>,
     
-    /// 仲裁者
     pub arbitrator: Signer<'info>,
     
-    /// Escrow Token 帳戶
     #[account(
         mut,
         constraint = escrow_token.owner == escrow.key(),
@@ -128,7 +114,6 @@ pub struct ResolveDispute<'info> {
     )]
     pub escrow_token: InterfaceAccount<'info, TokenAccount>,
     
-    /// 房東 Token 帳戶
     #[account(
         mut,
         constraint = landlord_token.owner == lease.landlord,
@@ -136,7 +121,6 @@ pub struct ResolveDispute<'info> {
     )]
     pub landlord_token: InterfaceAccount<'info, TokenAccount>,
     
-    /// 承租人 Token 帳戶  
     #[account(
         mut,
         constraint = tenant_token.owner == lease.tenant,

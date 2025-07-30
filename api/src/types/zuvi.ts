@@ -87,6 +87,10 @@ export type Zuvi = {
               {
                 "kind": "account",
                 "path": "applicant"
+              },
+              {
+                "kind": "arg",
+                "path": "createdAt"
               }
             ]
           }
@@ -117,6 +121,10 @@ export type Zuvi = {
               64
             ]
           }
+        },
+        {
+          "name": "createdAt",
+          "type": "i64"
         }
       ]
     },
@@ -135,9 +143,6 @@ export type Zuvi = {
       "accounts": [
         {
           "name": "listing",
-          "docs": [
-            "房源列表帳戶"
-          ],
           "pda": {
             "seeds": [
               {
@@ -159,9 +164,6 @@ export type Zuvi = {
         },
         {
           "name": "application",
-          "docs": [
-            "申請帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -180,18 +182,18 @@ export type Zuvi = {
                 "path": "listing"
               },
               {
-                "kind": "account",
-                "path": "application.applicant",
-                "account": "application"
+                "kind": "arg",
+                "path": "applicant"
+              },
+              {
+                "kind": "arg",
+                "path": "createdAt"
               }
             ]
           }
         },
         {
           "name": "owner",
-          "docs": [
-            "房東"
-          ],
           "signer": true
         }
       ],
@@ -199,6 +201,10 @@ export type Zuvi = {
         {
           "name": "applicant",
           "type": "pubkey"
+        },
+        {
+          "name": "createdAt",
+          "type": "i64"
         }
       ]
     },
@@ -217,7 +223,34 @@ export type Zuvi = {
       "accounts": [
         {
           "name": "application",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  112,
+                  112,
+                  108,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "application.listing",
+                "account": "application"
+              },
+              {
+                "kind": "account",
+                "path": "applicant"
+              },
+              {
+                "kind": "arg",
+                "path": "createdAt"
+              }
+            ]
+          }
         },
         {
           "name": "applicant",
@@ -225,7 +258,16 @@ export type Zuvi = {
           "signer": true
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "applicant",
+          "type": "pubkey"
+        },
+        {
+          "name": "createdAt",
+          "type": "i64"
+        }
+      ]
     },
     {
       "name": "confirmRelease",
@@ -389,9 +431,12 @@ export type Zuvi = {
                 "path": "listing"
               },
               {
-                "kind": "account",
-                "path": "application.applicant",
-                "account": "application"
+                "kind": "arg",
+                "path": "applicant"
+              },
+              {
+                "kind": "arg",
+                "path": "applicationCreatedAt"
               }
             ]
           }
@@ -440,6 +485,10 @@ export type Zuvi = {
         {
           "name": "applicant",
           "type": "pubkey"
+        },
+        {
+          "name": "applicationCreatedAt",
+          "type": "i64"
         },
         {
           "name": "startDate",
@@ -993,9 +1042,12 @@ export type Zuvi = {
                 "path": "listing"
               },
               {
-                "kind": "account",
-                "path": "application.applicant",
-                "account": "application"
+                "kind": "arg",
+                "path": "applicant"
+              },
+              {
+                "kind": "arg",
+                "path": "createdAt"
               }
             ]
           }
@@ -1009,6 +1061,10 @@ export type Zuvi = {
         {
           "name": "applicant",
           "type": "pubkey"
+        },
+        {
+          "name": "createdAt",
+          "type": "i64"
         }
       ]
     },

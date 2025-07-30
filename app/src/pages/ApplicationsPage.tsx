@@ -27,7 +27,7 @@ interface Application {
       }
     }
   }
-  messageData?: {
+  message?: {
     applicant?: {
       occupation: string
       company_type: string
@@ -302,9 +302,9 @@ function ApplicationCard({
           <span>申請日期：{formatDate(application.createdAt)}</span>
         </div>
 
-        {isExpanded && application.messageData && (
+        {isExpanded && application.message && (
           <div className="border-t pt-4 space-y-4">
-            {application.messageData.applicant && (
+            {application.message.applicant && (
               <div>
                 <h4 className="font-medium flex items-center mb-2">
                   <User className="h-4 w-4 mr-2" />
@@ -313,25 +313,25 @@ function ApplicationCard({
                 <div className="grid grid-cols-2 gap-3 text-sm bg-muted/50 p-3 rounded-lg">
                   <div>
                     <span className="text-muted-foreground">職業：</span>
-                    <span>{application.messageData.applicant.occupation}</span>
+                    <span>{application.message.applicant.occupation}</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">工作性質：</span>
-                    <span>{application.messageData.applicant.company_type}</span>
+                    <span>{application.message.applicant.company_type}</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">出生年月：</span>
-                    <span>{application.messageData.applicant.birth_date}</span>
+                    <span>{application.message.applicant.birth_date}</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">性別：</span>
-                    <span>{application.messageData.applicant.gender}</span>
+                    <span>{application.message.applicant.gender}</span>
                   </div>
                 </div>
               </div>
             )}
 
-            {application.messageData.preferences && (
+            {application.message.preferences && (
               <div>
                 <h4 className="font-medium flex items-center mb-2">
                   <Briefcase className="h-4 w-4 mr-2" />
@@ -340,21 +340,21 @@ function ApplicationCard({
                 <div className="grid grid-cols-2 gap-3 text-sm bg-muted/50 p-3 rounded-lg">
                   <div>
                     <span className="text-muted-foreground">期望入住：</span>
-                    <span>{application.messageData.preferences.move_in_date}</span>
+                    <span>{application.message.preferences.move_in_date}</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">期望租期：</span>
-                    <span>{application.messageData.preferences.lease_term_months} 個月</span>
+                    <span>{application.message.preferences.lease_term_months} 個月</span>
                   </div>
                 </div>
               </div>
             )}
 
-            {application.messageData.message && (
+            {application.message.message && (
               <div>
                 <h4 className="font-medium mb-2">自我介紹</h4>
                 <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg whitespace-pre-line">
-                  {application.messageData.message}
+                  {application.message.message}
                 </p>
               </div>
             )}

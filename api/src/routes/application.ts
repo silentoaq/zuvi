@@ -32,7 +32,7 @@ router.post('/apply', requireCitizenCredential, async (req: AuthRequest, res, ne
     }
 
     const createdAt = new BN(Math.floor(Date.now() / 1000));
-    const ipfsResult = await StorageService.uploadJSON(message, 'application', req.user!.publicKey);
+    const ipfsResult = await StorageService.uploadJSON(message, 'apply', req.user!.publicKey);
     const messageUriBytes = StorageService.ipfsHashToBytes(ipfsResult.ipfsHash);
 
     const [applicationPda] = derivePDAs.application(listingPubkey, userPublicKey, createdAt);
@@ -76,6 +76,58 @@ router.post('/apply', requireCitizenCredential, async (req: AuthRequest, res, ne
       transaction: serialized.toString('base64'),
       application: applicationPda.toString(),
       ipfsHash: ipfsResult.ipfsHash
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/:applicationId', async (req: AuthRequest, res, next) => {
+  try {
+    const { applicationId } = req.params;
+    const userPublicKey = new PublicKey(req.user!.publicKey);
+    const applicationPubkey = new PublicKey(applicationId);
+
+    const applicationAccount = await program.account.application.fetch(applicationPubkey);
+    if (!applicationAccount.applicant.equals(userPublicKey)) {
+      throw new ApiError(403, 'Not the applicant of this application');
+    }
+
+    if (applicationAccount.status !== 0) {
+      throw new ApiError(400, 'Cannot cancel processed application');
+    }
+
+    const tx = await program.methods
+      .closeApplication(
+        userPublicKey,
+        applicationAccount.createdAt
+      )
+      .accountsStrict({
+        application: applicationPubkey,
+        applicant: userPublicKey,
+      })
+      .transaction();
+
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
+
+    const serialized = tx.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false
+    });
+
+    const listingAccount = await program.account.listing.fetch(applicationAccount.listing);
+    broadcastToUser(listingAccount.owner.toString(), {
+      type: 'application_cancelled',
+      listing: applicationAccount.listing.toString(),
+      applicant: userPublicKey.toString(),
+      message: '申請人已撤回申請'
+    });
+
+    res.json({
+      success: true,
+      transaction: serialized.toString('base64')
     });
   } catch (error) {
     next(error);
@@ -152,15 +204,17 @@ router.get('/my', async (req: AuthRequest, res, next) => {
 
         return {
           publicKey: app.publicKey.toString(),
-          listing: {
+          listing: app.account.listing.toString(),
+          applicant: app.account.applicant.toString(),
+          status: app.account.status,
+          createdAt: app.account.createdAt.toNumber(),
+          listingInfo: {
             publicKey: app.account.listing.toString(),
             address: Buffer.from(listing.address).toString('utf8').replace(/\0/g, ''),
             rent: listing.rent.toString(),
             deposit: listing.deposit.toString(),
             metadata: listingMetadata
           },
-          status: app.account.status,
-          createdAt: app.account.createdAt.toNumber(),
           message
         };
       })

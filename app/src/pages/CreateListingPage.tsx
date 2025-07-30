@@ -139,7 +139,14 @@ export default function CreateListingPage() {
       fetchExistingListings()
     }
     
+    const handleBeforeUnload = () => {
+      clearAllTempImages()
+    }
+    
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
       clearAllTempImages()
     }
   }, [user?.publicKey])
@@ -450,7 +457,7 @@ export default function CreateListingPage() {
   }
 
   const handleStepBack = async (fromStep: string) => {
-    if (fromStep === 'form' || fromStep === 'publish') {
+    if (fromStep === 'form') {
       await clearAllTempImages()
       setFormData(prev => ({ ...prev, uploadedImages: [] }))
     }
@@ -533,6 +540,8 @@ export default function CreateListingPage() {
 
     } catch (error) {
       console.error('Error publishing listing:', error)
+      await clearAllTempImages()
+      setFormData(prev => ({ ...prev, uploadedImages: [] }))
       toast.error(error instanceof Error ? error.message : '發布失敗，請稍後再試')
     }
   }, [selectedCredential, disclosureStatus, formData, executeTransaction])

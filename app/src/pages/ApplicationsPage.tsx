@@ -1,10 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { FileText, MapPin, Calendar, Clock, X } from 'lucide-react'
+import { FileText, MapPin, Calendar, Clock, X, ChevronDown, ChevronUp, User, Briefcase, Home } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { useAuthStore } from '@/stores/authStore'
 import { useTransaction } from '@/hooks'
@@ -32,6 +31,8 @@ interface Application {
     applicant?: {
       occupation: string
       company_type: string
+      birth_date: string
+      gender: string
     }
     preferences?: {
       move_in_date: string
@@ -41,11 +42,15 @@ interface Application {
   }
 }
 
+type FilterStatus = 'all' | '0' | '1' | '2'
+
 export default function ApplicationsPage() {
   useAuthStore()
   const [applications, setApplications] = useState<Application[]>([])
   const [loading, setLoading] = useState(true)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
 
   const {
     executeTransaction,
@@ -111,6 +116,26 @@ export default function ApplicationsPage() {
     }
   }, [executeTransaction])
 
+  const toggleExpanded = (applicationId: string) => {
+    const newExpanded = new Set(expandedCards)
+    if (newExpanded.has(applicationId)) {
+      newExpanded.delete(applicationId)
+    } else {
+      newExpanded.add(applicationId)
+    }
+    setExpandedCards(newExpanded)
+  }
+
+  const filteredApplications = applications.filter(app => {
+    if (filterStatus === 'all') return true
+    return app.status.toString() === filterStatus
+  })
+
+  const getStatusCount = (status: FilterStatus) => {
+    if (status === 'all') return applications.length
+    return applications.filter(app => app.status.toString() === status).length
+  }
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -131,10 +156,6 @@ export default function ApplicationsPage() {
     )
   }
 
-  const pendingApplications = applications.filter(app => app.status === 0)
-  const approvedApplications = applications.filter(app => app.status === 1)
-  const rejectedApplications = applications.filter(app => app.status === 2)
-
   return (
     <div className="space-y-6">
       <div className="text-center space-y-2">
@@ -142,108 +163,72 @@ export default function ApplicationsPage() {
         <p className="text-muted-foreground">查看您提交的租賃申請狀態</p>
       </div>
 
-      <Tabs defaultValue="all" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="all">
-            全部 ({applications.length})
-          </TabsTrigger>
-          <TabsTrigger value="pending">
-            待審核 ({pendingApplications.length})
-          </TabsTrigger>
-          <TabsTrigger value="approved">
-            已核准 ({approvedApplications.length})
-          </TabsTrigger>
-          <TabsTrigger value="rejected">
-            已拒絕 ({rejectedApplications.length})
-          </TabsTrigger>
-        </TabsList>
+      <div className="flex flex-wrap gap-2">
+        {[
+          { key: 'all' as FilterStatus, label: '全部' },
+          { key: '0' as FilterStatus, label: '待審核' },
+          { key: '1' as FilterStatus, label: '已核准' },
+          { key: '2' as FilterStatus, label: '已拒絕' }
+        ].map(({ key, label }) => (
+          <Button
+            key={key}
+            variant={filterStatus === key ? "default" : "outline"}
+            size="sm"
+            onClick={() => setFilterStatus(key)}
+          >
+            {label} ({getStatusCount(key)})
+          </Button>
+        ))}
+      </div>
 
-        <TabsContent value="all" className="space-y-4">
-          {applications.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">還沒有申請記錄</h3>
-              <p className="text-muted-foreground mb-4">
-                瀏覽房源並提交您的第一個租賃申請
-              </p>
-              <Button asChild>
-                <Link to="/">瀏覽房源</Link>
-              </Button>
-            </div>
-          ) : (
-            applications.map((application) => (
-              <ApplicationCard 
-                key={application.publicKey} 
-                application={application}
-                onCancel={handleCancelApplication}
-                isCancelling={cancellingId === application.publicKey && isCancelling}
-              />
-            ))
-          )}
-        </TabsContent>
-
-        <TabsContent value="pending" className="space-y-4">
-          {pendingApplications.length === 0 ? (
-            <div className="text-center py-12">
-              <Clock className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">沒有待審核的申請</h3>
-            </div>
-          ) : (
-            pendingApplications.map((application) => (
-              <ApplicationCard 
-                key={application.publicKey} 
-                application={application}
-                onCancel={handleCancelApplication}
-                isCancelling={cancellingId === application.publicKey && isCancelling}
-              />
-            ))
-          )}
-        </TabsContent>
-
-        <TabsContent value="approved" className="space-y-4">
-          {approvedApplications.length === 0 ? (
-            <div className="text-center py-12">
-              <h3 className="text-lg font-semibold mb-2">沒有已核准的申請</h3>
-            </div>
-          ) : (
-            approvedApplications.map((application) => (
-              <ApplicationCard 
-                key={application.publicKey} 
-                application={application}
-                onCancel={handleCancelApplication}
-                isCancelling={cancellingId === application.publicKey && isCancelling}
-              />
-            ))
-          )}
-        </TabsContent>
-
-        <TabsContent value="rejected" className="space-y-4">
-          {rejectedApplications.length === 0 ? (
-            <div className="text-center py-12">
-              <h3 className="text-lg font-semibold mb-2">沒有被拒絕的申請</h3>
-            </div>
-          ) : (
-            rejectedApplications.map((application) => (
-              <ApplicationCard 
-                key={application.publicKey} 
-                application={application}
-                onCancel={handleCancelApplication}
-                isCancelling={cancellingId === application.publicKey && isCancelling}
-              />
-            ))
-          )}
-        </TabsContent>
-      </Tabs>
+      <div className="space-y-4">
+        {filteredApplications.length === 0 ? (
+          <div className="text-center py-12">
+            {filterStatus === 'all' ? (
+              <>
+                <FileText className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">還沒有申請記錄</h3>
+                <p className="text-muted-foreground mb-4">
+                  瀏覽房源並提交您的第一個租賃申請
+                </p>
+                <Button asChild>
+                  <Link to="/">瀏覽房源</Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Clock className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">沒有符合條件的申請</h3>
+              </>
+            )}
+          </div>
+        ) : (
+          filteredApplications.map((application) => (
+            <ApplicationCard 
+              key={application.publicKey} 
+              application={application}
+              isExpanded={expandedCards.has(application.publicKey)}
+              onToggleExpanded={() => toggleExpanded(application.publicKey)}
+              onCancel={handleCancelApplication}
+              isCancelling={cancellingId === application.publicKey && isCancelling}
+            />
+          ))
+        )}
+      </div>
     </div>
   )
 }
 
 function ApplicationCard({ 
   application, 
+  isExpanded,
+  onToggleExpanded,
   onCancel,
   isCancelling 
 }: { 
   application: Application
+  isExpanded: boolean
+  onToggleExpanded: () => void
   onCancel: (id: string) => void
   isCancelling: boolean
 }) {
@@ -277,9 +262,20 @@ function ApplicationCard({
             <FileText className="h-5 w-5" />
             <span>{application.listingInfo?.metadata?.basic?.title || '房源申請'}</span>
           </CardTitle>
-          {getStatusBadge(application.status)}
+          <div className="flex items-center space-x-2">
+            {getStatusBadge(application.status)}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onToggleExpanded}
+              className="h-8 w-8 p-0"
+            >
+              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </Button>
+          </div>
         </div>
       </CardHeader>
+      
       <CardContent className="space-y-4">
         <div className="flex items-center text-muted-foreground">
           <MapPin className="h-4 w-4 mr-2" />
@@ -306,16 +302,69 @@ function ApplicationCard({
           <span>申請日期：{formatDate(application.createdAt)}</span>
         </div>
 
-        {application.messageData?.preferences?.move_in_date && (
-          <div className="text-sm">
-            <span className="text-muted-foreground">期望入住日期：</span>
-            <span>{application.messageData.preferences.move_in_date}</span>
+        {isExpanded && application.messageData && (
+          <div className="border-t pt-4 space-y-4">
+            {application.messageData.applicant && (
+              <div>
+                <h4 className="font-medium flex items-center mb-2">
+                  <User className="h-4 w-4 mr-2" />
+                  申請人資訊
+                </h4>
+                <div className="grid grid-cols-2 gap-3 text-sm bg-muted/50 p-3 rounded-lg">
+                  <div>
+                    <span className="text-muted-foreground">職業：</span>
+                    <span>{application.messageData.applicant.occupation}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">工作性質：</span>
+                    <span>{application.messageData.applicant.company_type}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">出生年月：</span>
+                    <span>{application.messageData.applicant.birth_date}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">性別：</span>
+                    <span>{application.messageData.applicant.gender}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {application.messageData.preferences && (
+              <div>
+                <h4 className="font-medium flex items-center mb-2">
+                  <Briefcase className="h-4 w-4 mr-2" />
+                  租賃偏好
+                </h4>
+                <div className="grid grid-cols-2 gap-3 text-sm bg-muted/50 p-3 rounded-lg">
+                  <div>
+                    <span className="text-muted-foreground">期望入住：</span>
+                    <span>{application.messageData.preferences.move_in_date}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">期望租期：</span>
+                    <span>{application.messageData.preferences.lease_term_months} 個月</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {application.messageData.message && (
+              <div>
+                <h4 className="font-medium mb-2">自我介紹</h4>
+                <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg whitespace-pre-line">
+                  {application.messageData.message}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center pt-2">
           <Button variant="outline" asChild>
             <Link to={`/listing/${application.listingInfo?.publicKey || application.listing}`}>
+              <Home className="h-4 w-4 mr-2" />
               查看房源
             </Link>
           </Button>

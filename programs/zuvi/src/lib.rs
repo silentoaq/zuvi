@@ -39,6 +39,17 @@ pub mod zuvi {
         instructions::create_listing(ctx, address, building_area, rent, deposit, metadata_uri)
     }
 
+    /// 更新房源資訊
+    /// 只能更新未出租的房源
+    pub fn update_listing(
+        ctx: Context<UpdateListing>,
+        rent: Option<u64>,
+        deposit: Option<u64>,
+        metadata_uri: Option<[u8; 46]>,
+    ) -> Result<()> {
+        instructions::update_listing(ctx, rent, deposit, metadata_uri)
+    }
+
     /// 切換房源狀態
     /// 在可用和下架之間切換
     pub fn toggle_listing(ctx: Context<ToggleListing>) -> Result<()> {

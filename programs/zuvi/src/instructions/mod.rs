@@ -1,5 +1,6 @@
 pub mod initialize;
 pub mod create_listing;
+pub mod update_listing;
 pub mod toggle_listing;
 pub mod apply_lease;
 pub mod approve_application;
@@ -13,6 +14,7 @@ pub mod resolve_dispute;
 
 pub use initialize::*;
 pub use create_listing::*;
+pub use update_listing::*;
 pub use toggle_listing::*;
 pub use apply_lease::*;
 pub use approve_application::*;

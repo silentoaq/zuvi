@@ -1415,6 +1415,82 @@ export type Zuvi = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "updateListing",
+      "docs": [
+        "更新房源資訊",
+        "只能更新未出租的房源"
+      ],
+      "discriminator": [
+        192,
+        174,
+        210,
+        68,
+        116,
+        40,
+        242,
+        253
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "docs": [
+            "房源列表帳戶"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "listing.property_attest",
+                "account": "listing"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "docs": [
+            "房東"
+          ],
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "rent",
+          "type": {
+            "option": "u64"
+          }
+        },
+        {
+          "name": "deposit",
+          "type": {
+            "option": "u64"
+          }
+        },
+        {
+          "name": "metadataUri",
+          "type": {
+            "option": {
+              "array": [
+                "u8",
+                46
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "accounts": [

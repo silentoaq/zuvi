@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Transaction } from '@solana/web3.js'
-import { MapPin, Bed, Bath, Home, Edit, Eye, Users, Upload, X } from 'lucide-react'
+import { MapPin, Bed, Bath, Home, Edit, Eye, Users, Upload, X, Check, XCircle } from 'lucide-react'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -58,6 +58,7 @@ interface Application {
   applicant: string
   status: number
   createdAt: number
+  message?: any
 }
 
 interface UploadedImage {
@@ -129,6 +130,16 @@ export default function ManageListingsPage() {
       fetchMyListings()
     }
   })
+
+  const {
+    executeTransaction: executeApplicationAction,
+    isLoading: isProcessingApplication
+  } = useTransaction({
+    onSuccess: () => {
+      toast.success('申請處理成功')
+      fetchApplications(currentViewingListing!)
+    }
+  })
   
   const [listings, setListings] = useState<Listing[]>([])
   const [loading, setLoading] = useState(true)
@@ -136,6 +147,7 @@ export default function ManageListingsPage() {
   const [editFormData, setEditFormData] = useState<EditFormData | null>(null)
   const [applications, setApplications] = useState<Record<string, Application[]>>({})
   const [uploading, setUploading] = useState(false)
+  const [currentViewingListing, setCurrentViewingListing] = useState<string | null>(null)
 
   useEffect(() => {
     if (user?.publicKey) {
@@ -183,6 +195,31 @@ export default function ManageListingsPage() {
       console.error('Error fetching applications:', error)
     }
   }
+
+  const handleApplicationAction = useCallback(async (listingId: string, applicant: string, action: 'approve' | 'reject') => {
+    try {
+      const response = await fetch(`/api/applications/${listingId}/${action}/${applicant}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || `Failed to ${action} application`)
+      }
+
+      const { transaction: serializedTx } = await response.json()
+      const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
+      
+      await executeApplicationAction(tx)
+    } catch (error) {
+      console.error(`Error ${action}ing application:`, error)
+      toast.error(error instanceof Error ? error.message : `無法${action === 'approve' ? '核准' : '拒絕'}申請`)
+    }
+  }, [executeApplicationAction])
 
   const toggleListingStatus = useCallback(async (listing: Listing) => {
     try {
@@ -418,6 +455,19 @@ export default function ManageListingsPage() {
     }
   }
 
+  const getApplicationStatusBadge = (status: number) => {
+    switch (status) {
+      case 0:
+        return <Badge variant="secondary">待審核</Badge>
+      case 1:
+        return <Badge variant="default">已核准</Badge>
+      case 2:
+        return <Badge variant="destructive">已拒絕</Badge>
+      default:
+        return <Badge variant="secondary">未知</Badge>
+    }
+  }
+
   const getTypeValue = (label: string) => {
     return HOUSE_TYPES.find(t => t.label === label)?.value || 'entire'
   }
@@ -559,7 +609,10 @@ export default function ManageListingsPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => fetchApplications(listing.publicKey)}
+                        onClick={() => {
+                          setCurrentViewingListing(listing.publicKey)
+                          fetchApplications(listing.publicKey)
+                        }}
                       >
                         <Users className="h-4 w-4 mr-2" />
                         申請
@@ -578,16 +631,62 @@ export default function ManageListingsPage() {
                             {applications[listing.publicKey].map((app) => (
                               <Card key={app.publicKey}>
                                 <CardContent className="p-4">
-                                  <div className="flex justify-between items-center">
-                                    <div>
-                                      <p className="font-medium">申請人: {app.applicant.slice(0, 8)}...</p>
-                                      <p className="text-sm text-muted-foreground">
-                                        申請時間: {new Date(app.createdAt * 1000).toLocaleDateString('zh-TW')}
-                                      </p>
+                                  <div className="space-y-3">
+                                    <div className="flex justify-between items-start">
+                                      <div className="space-y-1">
+                                        <p className="font-medium">申請人: {app.applicant.slice(0, 8)}...</p>
+                                        <p className="text-sm text-muted-foreground">
+                                          申請時間: {new Date(app.createdAt * 1000).toLocaleDateString('zh-TW')}
+                                        </p>
+                                      </div>
+                                      {getApplicationStatusBadge(app.status)}
                                     </div>
-                                    <Badge variant={app.status === 0 ? "secondary" : app.status === 1 ? "default" : "destructive"}>
-                                      {app.status === 0 ? "待審核" : app.status === 1 ? "已核准" : "已拒絕"}
-                                    </Badge>
+                                    
+                                    {app.message && (
+                                      <div className="border-t pt-3">
+                                        {app.message.applicant && (
+                                          <div className="text-sm space-y-1">
+                                            <p><span className="font-medium">職業:</span> {app.message.applicant.occupation}</p>
+                                            <p><span className="font-medium">工作性質:</span> {app.message.applicant.company_type}</p>
+                                          </div>
+                                        )}
+                                        {app.message.preferences && (
+                                          <div className="text-sm space-y-1 mt-2">
+                                            <p><span className="font-medium">期望入住:</span> {app.message.preferences.move_in_date}</p>
+                                            <p><span className="font-medium">期望租期:</span> {app.message.preferences.lease_term_months} 個月</p>
+                                          </div>
+                                        )}
+                                        {app.message.message && (
+                                          <div className="mt-2">
+                                            <p className="font-medium text-sm">自我介紹:</p>
+                                            <p className="text-sm text-muted-foreground">{app.message.message}</p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                    
+                                    {app.status === 0 && (
+                                      <div className="flex gap-2 pt-2 border-t">
+                                        <Button
+                                          size="sm"
+                                          variant="default"
+                                          onClick={() => handleApplicationAction(listing.publicKey, app.applicant, 'approve')}
+                                          disabled={isProcessingApplication}
+                                        >
+                                          <Check className="h-4 w-4 mr-1" />
+                                          核准
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="destructive"
+                                          onClick={() => handleApplicationAction(listing.publicKey, app.applicant, 'reject')}
+                                          disabled={isProcessingApplication}
+                                        >
+                                          <XCircle className="h-4 w-4 mr-1" />
+                                          拒絕
+                                        </Button>
+                                      </div>
+                                    )}
                                   </div>
                                 </CardContent>
                               </Card>

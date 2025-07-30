@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
-import { program, derivePDAs } from '../config/solana';
+import { program, derivePDAs, apiSignerWallet } from '../config/solana';
 import { StorageService } from '../services/storage';
 import { ApiError } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
@@ -37,12 +37,16 @@ router.post('/apply', async (req: AuthRequest, res, next) => {
     
     const [applicationPda] = derivePDAs.application(listingPubkey, userPublicKey);
 
+    const [configPda] = derivePDAs.config();
+
     const tx = await program.methods
       .applyLease(StorageService.ipfsHashToBytes(ipfsResult.ipfsHash))
       .accountsStrict({
+        config: configPda,
         listing: listingPubkey,
         application: applicationPda,
         applicant: userPublicKey,
+        apiSigner: apiSignerWallet.publicKey,
         tenantAttest: tenantAttestPubkey,
         systemProgram: SystemProgram.programId,
       })
@@ -52,6 +56,9 @@ router.post('/apply', async (req: AuthRequest, res, next) => {
     const { blockhash } = await program.provider.connection.getLatestBlockhash();
     tx.recentBlockhash = blockhash;
     tx.feePayer = userPublicKey;
+    
+    // API 簽名者簽署交易
+    tx.partialSign(apiSignerWallet.payer);
 
     const serialized = tx.serialize({
       requireAllSignatures: false,
@@ -145,8 +152,8 @@ router.get('/my', async (req: AuthRequest, res, next) => {
         
         return {
           publicKey: app.publicKey.toString(),
-          listing: {
-            publicKey: app.account.listing.toString(),
+          listing: app.account.listing.toString(),
+          listingInfo: {
             address: Buffer.from(listing.address).toString('utf8').replace(/\0/g, ''),
             rent: listing.rent.toString(),
             deposit: listing.deposit.toString(),
@@ -154,7 +161,7 @@ router.get('/my', async (req: AuthRequest, res, next) => {
           },
           status: app.account.status,
           createdAt: app.account.createdAt.toNumber(),
-          message,
+          messageData: message,
           ipfsHash
         };
       })
@@ -210,6 +217,112 @@ router.post('/:listing/approve/:applicant', async (req: AuthRequest, res, next) 
       listing: listing,
       landlord: userPublicKey.toString(),
       message: '您的租賃申請已被核准'
+    });
+
+    res.json({
+      success: true,
+      transaction: serialized.toString('base64')
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 拒絕申請 (房東用)
+router.post('/:listing/reject/:applicant', async (req: AuthRequest, res, next) => {
+  try {
+    const { listing, applicant } = req.params;
+    const userPublicKey = new PublicKey(req.user!.publicKey);
+    const listingPubkey = new PublicKey(listing);
+    const applicantPubkey = new PublicKey(applicant);
+
+    // 檢查是否為房東
+    const listingAccount = await program.account.listing.fetch(listingPubkey);
+    if (!listingAccount.owner.equals(userPublicKey)) {
+      throw new ApiError(403, 'Not the owner of this listing');
+    }
+
+    const [applicationPda] = derivePDAs.application(listingPubkey, applicantPubkey);
+
+    const tx = await program.methods
+      .rejectApplication(applicantPubkey)
+      .accountsStrict({
+        listing: listingPubkey,
+        application: applicationPda,
+        owner: userPublicKey,
+      })
+      .transaction();
+
+    // 設置 recentBlockhash
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
+
+    const serialized = tx.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false
+    });
+
+    // 通知承租人申請已拒絕
+    broadcastToUser(applicant, {
+      type: 'application_rejected',
+      listing: listing,
+      landlord: userPublicKey.toString(),
+      message: '您的租賃申請已被拒絕'
+    });
+
+    res.json({
+      success: true,
+      transaction: serialized.toString('base64')
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 關閉申請 (承租人用)
+router.delete('/:application', async (req: AuthRequest, res, next) => {
+  try {
+    const { application } = req.params;
+    const userPublicKey = new PublicKey(req.user!.publicKey);
+    const applicationPubkey = new PublicKey(application);
+
+    // 檢查是否為申請人
+    const applicationAccount = await program.account.application.fetch(applicationPubkey);
+    if (!applicationAccount.applicant.equals(userPublicKey)) {
+      throw new ApiError(403, 'Not the applicant of this application');
+    }
+
+    // 檢查申請狀態
+    if (applicationAccount.status !== 0) {
+      throw new ApiError(400, 'Can only close pending applications');
+    }
+
+    const tx = await program.methods
+      .closeApplication()
+      .accountsStrict({
+        application: applicationPubkey,
+        applicant: userPublicKey,
+      })
+      .transaction();
+
+    // 設置 recentBlockhash
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
+
+    const serialized = tx.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false
+    });
+
+    // 通知房東申請已撤回
+    const listingAccount = await program.account.listing.fetch(applicationAccount.listing);
+    broadcastToUser(listingAccount.owner.toString(), {
+      type: 'application_closed',
+      listing: applicationAccount.listing.toString(),
+      applicant: userPublicKey.toString(),
+      message: '承租人已撤回申請'
     });
 
     res.json({

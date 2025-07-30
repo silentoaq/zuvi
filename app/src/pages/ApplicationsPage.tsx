@@ -1,11 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { FileText, MapPin, Calendar, Clock } from 'lucide-react'
+import { FileText, MapPin, Calendar, Clock, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { useAuthStore } from '@/stores/authStore'
+import { useTransaction } from '@/hooks'
+import { toast } from 'sonner'
+import { Transaction } from '@solana/web3.js'
 
 interface Application {
   publicKey: string
@@ -14,6 +18,7 @@ interface Application {
   status: number
   createdAt: number
   listingInfo?: {
+    publicKey: string
     address: string
     rent: string
     deposit: string
@@ -40,6 +45,21 @@ export default function ApplicationsPage() {
   useAuthStore()
   const [applications, setApplications] = useState<Application[]>([])
   const [loading, setLoading] = useState(true)
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
+
+  const {
+    executeTransaction,
+    isLoading: isCancelling
+  } = useTransaction({
+    onSuccess: () => {
+      toast.success('申請已成功撤回')
+      fetchApplications()
+      setCancellingId(null)
+    },
+    onError: () => {
+      setCancellingId(null)
+    }
+  })
 
   useEffect(() => {
     fetchApplications()
@@ -63,6 +83,33 @@ export default function ApplicationsPage() {
       setLoading(false)
     }
   }
+
+  const handleCancelApplication = useCallback(async (applicationId: string) => {
+    try {
+      setCancellingId(applicationId)
+      
+      const response = await fetch(`/api/applications/${applicationId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
+        }
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to cancel application')
+      }
+
+      const { transaction: serializedTx } = await response.json()
+      const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
+      
+      await executeTransaction(tx)
+    } catch (error) {
+      console.error('Error cancelling application:', error)
+      toast.error(error instanceof Error ? error.message : '撤回申請失敗')
+      setCancellingId(null)
+    }
+  }, [executeTransaction])
 
   if (loading) {
     return (
@@ -125,7 +172,12 @@ export default function ApplicationsPage() {
             </div>
           ) : (
             applications.map((application) => (
-              <ApplicationCard key={application.publicKey} application={application} />
+              <ApplicationCard 
+                key={application.publicKey} 
+                application={application}
+                onCancel={handleCancelApplication}
+                isCancelling={cancellingId === application.publicKey && isCancelling}
+              />
             ))
           )}
         </TabsContent>
@@ -138,7 +190,12 @@ export default function ApplicationsPage() {
             </div>
           ) : (
             pendingApplications.map((application) => (
-              <ApplicationCard key={application.publicKey} application={application} />
+              <ApplicationCard 
+                key={application.publicKey} 
+                application={application}
+                onCancel={handleCancelApplication}
+                isCancelling={cancellingId === application.publicKey && isCancelling}
+              />
             ))
           )}
         </TabsContent>
@@ -150,7 +207,12 @@ export default function ApplicationsPage() {
             </div>
           ) : (
             approvedApplications.map((application) => (
-              <ApplicationCard key={application.publicKey} application={application} />
+              <ApplicationCard 
+                key={application.publicKey} 
+                application={application}
+                onCancel={handleCancelApplication}
+                isCancelling={cancellingId === application.publicKey && isCancelling}
+              />
             ))
           )}
         </TabsContent>
@@ -162,7 +224,12 @@ export default function ApplicationsPage() {
             </div>
           ) : (
             rejectedApplications.map((application) => (
-              <ApplicationCard key={application.publicKey} application={application} />
+              <ApplicationCard 
+                key={application.publicKey} 
+                application={application}
+                onCancel={handleCancelApplication}
+                isCancelling={cancellingId === application.publicKey && isCancelling}
+              />
             ))
           )}
         </TabsContent>
@@ -171,7 +238,15 @@ export default function ApplicationsPage() {
   )
 }
 
-function ApplicationCard({ application }: { application: Application }) {
+function ApplicationCard({ 
+  application, 
+  onCancel,
+  isCancelling 
+}: { 
+  application: Application
+  onCancel: (id: string) => void
+  isCancelling: boolean
+}) {
   const formatPrice = (price: string) => {
     const num = parseInt(price) / 1_000_000
     return new Intl.NumberFormat('zh-TW').format(num)
@@ -240,14 +315,51 @@ function ApplicationCard({ application }: { application: Application }) {
 
         <div className="flex justify-between items-center">
           <Button variant="outline" asChild>
-            <Link to={`/listing/${application.listing}`}>
+            <Link to={`/listing/${application.listingInfo?.publicKey || application.listing}`}>
               查看房源
             </Link>
           </Button>
           
+          {application.status === 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  disabled={isCancelling}
+                >
+                  {isCancelling ? '撤回中...' : <><X className="h-4 w-4 mr-2" />撤回申請</>}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>確認撤回申請</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    確定要撤回這個租賃申請嗎？撤回後您需要重新提交申請。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>取消</AlertDialogCancel>
+                  <AlertDialogAction 
+                    onClick={() => onCancel(application.publicKey)}
+                    disabled={isCancelling}
+                  >
+                    確認撤回
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          
           {application.status === 1 && (
             <div className="text-sm text-green-600">
               ✓ 申請已獲核准，等待房東創建租約
+            </div>
+          )}
+          
+          {application.status === 2 && (
+            <div className="text-sm text-red-600">
+              ✗ 申請已被拒絕
             </div>
           )}
         </div>

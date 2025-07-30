@@ -15,10 +15,6 @@ export type Zuvi = {
   "instructions": [
     {
       "name": "applyLease",
-      "docs": [
-        "申請租賃",
-        "提交租賃申請和相關資料"
-      ],
       "discriminator": [
         81,
         96,
@@ -31,10 +27,25 @@ export type Zuvi = {
       ],
       "accounts": [
         {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "listing",
-          "docs": [
-            "房源列表帳戶"
-          ],
           "pda": {
             "seeds": [
               {
@@ -56,9 +67,6 @@ export type Zuvi = {
         },
         {
           "name": "application",
-          "docs": [
-            "申請帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -85,23 +93,18 @@ export type Zuvi = {
         },
         {
           "name": "applicant",
-          "docs": [
-            "申請人（支付者）"
-          ],
           "writable": true,
           "signer": true
         },
         {
-          "name": "tenantAttest",
-          "docs": [
-            "承租人憑證帳戶"
-          ]
+          "name": "apiSigner",
+          "signer": true
+        },
+        {
+          "name": "tenantAttest"
         },
         {
           "name": "systemProgram",
-          "docs": [
-            "系統程式"
-          ],
           "address": "11111111111111111111111111111111"
         }
       ],
@@ -119,10 +122,6 @@ export type Zuvi = {
     },
     {
       "name": "approveApplication",
-      "docs": [
-        "核准申請",
-        "房東核准特定申請人"
-      ],
       "discriminator": [
         136,
         47,
@@ -204,11 +203,32 @@ export type Zuvi = {
       ]
     },
     {
-      "name": "confirmRelease",
-      "docs": [
-        "確認押金結算",
-        "另一方確認押金分配"
+      "name": "closeApplication",
+      "discriminator": [
+        185,
+        123,
+        65,
+        93,
+        138,
+        249,
+        205,
+        150
       ],
+      "accounts": [
+        {
+          "name": "application",
+          "writable": true
+        },
+        {
+          "name": "applicant",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "confirmRelease",
       "discriminator": [
         181,
         157,
@@ -222,9 +242,6 @@ export type Zuvi = {
       "accounts": [
         {
           "name": "config",
-          "docs": [
-            "系統配置"
-          ],
           "pda": {
             "seeds": [
               {
@@ -243,9 +260,6 @@ export type Zuvi = {
         },
         {
           "name": "lease",
-          "docs": [
-            "租約"
-          ],
           "pda": {
             "seeds": [
               {
@@ -267,15 +281,17 @@ export type Zuvi = {
                 "kind": "account",
                 "path": "lease.tenant",
                 "account": "lease"
+              },
+              {
+                "kind": "account",
+                "path": "lease.start_date",
+                "account": "lease"
               }
             ]
           }
         },
         {
           "name": "escrow",
-          "docs": [
-            "押金託管帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -299,30 +315,18 @@ export type Zuvi = {
         },
         {
           "name": "signer",
-          "docs": [
-            "確認人（房東或承租人）"
-          ],
           "signer": true
         },
         {
           "name": "escrowToken",
-          "docs": [
-            "Escrow Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "landlordToken",
-          "docs": [
-            "房東 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "tenantToken",
-          "docs": [
-            "承租人 Token 帳戶"
-          ],
           "writable": true
         },
         {
@@ -334,10 +338,6 @@ export type Zuvi = {
     },
     {
       "name": "createLease",
-      "docs": [
-        "創建租約",
-        "房東發起租約，設定條款"
-      ],
       "discriminator": [
         158,
         42,
@@ -351,9 +351,6 @@ export type Zuvi = {
       "accounts": [
         {
           "name": "listing",
-          "docs": [
-            "房源列表帳戶"
-          ],
           "pda": {
             "seeds": [
               {
@@ -375,9 +372,6 @@ export type Zuvi = {
         },
         {
           "name": "application",
-          "docs": [
-            "申請帳戶（用於驗證）"
-          ],
           "pda": {
             "seeds": [
               {
@@ -404,9 +398,6 @@ export type Zuvi = {
         },
         {
           "name": "lease",
-          "docs": [
-            "租約帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -425,26 +416,23 @@ export type Zuvi = {
                 "path": "listing"
               },
               {
-                "kind": "account",
-                "path": "application.applicant",
-                "account": "application"
+                "kind": "arg",
+                "path": "applicant"
+              },
+              {
+                "kind": "arg",
+                "path": "startDate"
               }
             ]
           }
         },
         {
           "name": "landlord",
-          "docs": [
-            "房東（支付者）"
-          ],
           "writable": true,
           "signer": true
         },
         {
           "name": "systemProgram",
-          "docs": [
-            "系統程式"
-          ],
           "address": "11111111111111111111111111111111"
         }
       ],
@@ -478,10 +466,6 @@ export type Zuvi = {
     },
     {
       "name": "createListing",
-      "docs": [
-        "創建房源列表",
-        "需要 API 簽名，驗證產權憑證後創建"
-      ],
       "discriminator": [
         18,
         168,
@@ -602,10 +586,6 @@ export type Zuvi = {
     },
     {
       "name": "initialize",
-      "docs": [
-        "初始化系統配置",
-        "設定 API 簽名者、仲裁者、費用接收者、USDC mint 和費率"
-      ],
       "discriminator": [
         175,
         175,
@@ -680,10 +660,6 @@ export type Zuvi = {
     },
     {
       "name": "initiateRelease",
-      "docs": [
-        "發起押金結算",
-        "任一方發起押金分配方案"
-      ],
       "discriminator": [
         207,
         117,
@@ -697,9 +673,6 @@ export type Zuvi = {
       "accounts": [
         {
           "name": "lease",
-          "docs": [
-            "租約"
-          ],
           "pda": {
             "seeds": [
               {
@@ -721,15 +694,17 @@ export type Zuvi = {
                 "kind": "account",
                 "path": "lease.tenant",
                 "account": "lease"
+              },
+              {
+                "kind": "account",
+                "path": "lease.start_date",
+                "account": "lease"
               }
             ]
           }
         },
         {
           "name": "escrow",
-          "docs": [
-            "押金託管帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -753,9 +728,6 @@ export type Zuvi = {
         },
         {
           "name": "signer",
-          "docs": [
-            "發起人（房東或承租人）"
-          ],
           "signer": true
         }
       ],
@@ -772,10 +744,6 @@ export type Zuvi = {
     },
     {
       "name": "payRent",
-      "docs": [
-        "支付租金",
-        "每月定期支付租金"
-      ],
       "discriminator": [
         69,
         155,
@@ -789,9 +757,6 @@ export type Zuvi = {
       "accounts": [
         {
           "name": "config",
-          "docs": [
-            "系統配置"
-          ],
           "pda": {
             "seeds": [
               {
@@ -810,9 +775,6 @@ export type Zuvi = {
         },
         {
           "name": "lease",
-          "docs": [
-            "租約"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -835,37 +797,30 @@ export type Zuvi = {
                 "kind": "account",
                 "path": "lease.tenant",
                 "account": "lease"
+              },
+              {
+                "kind": "account",
+                "path": "lease.start_date",
+                "account": "lease"
               }
             ]
           }
         },
         {
           "name": "tenant",
-          "docs": [
-            "承租人"
-          ],
           "writable": true,
           "signer": true
         },
         {
           "name": "tenantToken",
-          "docs": [
-            "承租人 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "landlordToken",
-          "docs": [
-            "房東 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "feeReceiverToken",
-          "docs": [
-            "平台費接收者 Token 帳戶"
-          ],
           "writable": true
         },
         {
@@ -877,10 +832,6 @@ export type Zuvi = {
     },
     {
       "name": "raiseDispute",
-      "docs": [
-        "發起爭議",
-        "對押金分配有異議時發起"
-      ],
       "discriminator": [
         41,
         243,
@@ -894,9 +845,6 @@ export type Zuvi = {
       "accounts": [
         {
           "name": "lease",
-          "docs": [
-            "租約"
-          ],
           "pda": {
             "seeds": [
               {
@@ -918,15 +866,17 @@ export type Zuvi = {
                 "kind": "account",
                 "path": "lease.tenant",
                 "account": "lease"
+              },
+              {
+                "kind": "account",
+                "path": "lease.start_date",
+                "account": "lease"
               }
             ]
           }
         },
         {
           "name": "escrow",
-          "docs": [
-            "押金託管帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -950,9 +900,6 @@ export type Zuvi = {
         },
         {
           "name": "dispute",
-          "docs": [
-            "爭議帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -977,17 +924,11 @@ export type Zuvi = {
         },
         {
           "name": "initiator",
-          "docs": [
-            "發起人（房東或承租人）"
-          ],
           "writable": true,
           "signer": true
         },
         {
           "name": "systemProgram",
-          "docs": [
-            "系統程式"
-          ],
           "address": "11111111111111111111111111111111"
         }
       ],
@@ -999,11 +940,80 @@ export type Zuvi = {
       ]
     },
     {
-      "name": "resolveDispute",
-      "docs": [
-        "解決爭議",
-        "仲裁者裁決押金分配"
+      "name": "rejectApplication",
+      "discriminator": [
+        85,
+        73,
+        224,
+        47,
+        9,
+        184,
+        39,
+        217
       ],
+      "accounts": [
+        {
+          "name": "listing",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "listing.property_attest",
+                "account": "listing"
+              }
+            ]
+          }
+        },
+        {
+          "name": "application",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  112,
+                  112,
+                  108,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "listing"
+              },
+              {
+                "kind": "account",
+                "path": "application.applicant",
+                "account": "application"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "applicant",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "resolveDispute",
       "discriminator": [
         231,
         6,
@@ -1017,9 +1027,6 @@ export type Zuvi = {
       "accounts": [
         {
           "name": "config",
-          "docs": [
-            "系統配置"
-          ],
           "pda": {
             "seeds": [
               {
@@ -1038,9 +1045,6 @@ export type Zuvi = {
         },
         {
           "name": "lease",
-          "docs": [
-            "租約"
-          ],
           "pda": {
             "seeds": [
               {
@@ -1062,15 +1066,17 @@ export type Zuvi = {
                 "kind": "account",
                 "path": "lease.tenant",
                 "account": "lease"
+              },
+              {
+                "kind": "account",
+                "path": "lease.start_date",
+                "account": "lease"
               }
             ]
           }
         },
         {
           "name": "escrow",
-          "docs": [
-            "押金託管帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1094,9 +1100,6 @@ export type Zuvi = {
         },
         {
           "name": "dispute",
-          "docs": [
-            "爭議帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1121,30 +1124,18 @@ export type Zuvi = {
         },
         {
           "name": "arbitrator",
-          "docs": [
-            "仲裁者"
-          ],
           "signer": true
         },
         {
           "name": "escrowToken",
-          "docs": [
-            "Escrow Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "landlordToken",
-          "docs": [
-            "房東 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "tenantToken",
-          "docs": [
-            "承租人 Token 帳戶"
-          ],
           "writable": true
         },
         {
@@ -1165,10 +1156,6 @@ export type Zuvi = {
     },
     {
       "name": "signLease",
-      "docs": [
-        "簽署租約",
-        "承租人簽署並支付押金和首期租金"
-      ],
       "discriminator": [
         135,
         105,
@@ -1182,9 +1169,6 @@ export type Zuvi = {
       "accounts": [
         {
           "name": "config",
-          "docs": [
-            "系統配置"
-          ],
           "pda": {
             "seeds": [
               {
@@ -1203,9 +1187,6 @@ export type Zuvi = {
         },
         {
           "name": "listing",
-          "docs": [
-            "房源列表"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1228,9 +1209,6 @@ export type Zuvi = {
         },
         {
           "name": "lease",
-          "docs": [
-            "租約"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1246,11 +1224,17 @@ export type Zuvi = {
               },
               {
                 "kind": "account",
-                "path": "listing"
+                "path": "lease.listing",
+                "account": "lease"
               },
               {
                 "kind": "account",
                 "path": "lease.tenant",
+                "account": "lease"
+              },
+              {
+                "kind": "account",
+                "path": "lease.start_date",
                 "account": "lease"
               }
             ]
@@ -1258,9 +1242,6 @@ export type Zuvi = {
         },
         {
           "name": "escrow",
-          "docs": [
-            "押金託管帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1284,38 +1265,23 @@ export type Zuvi = {
         },
         {
           "name": "tenant",
-          "docs": [
-            "承租人"
-          ],
           "writable": true,
           "signer": true
         },
         {
           "name": "tenantToken",
-          "docs": [
-            "承租人 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "landlordToken",
-          "docs": [
-            "房東 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "feeReceiverToken",
-          "docs": [
-            "平台費接收者 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "escrowToken",
-          "docs": [
-            "Escrow Token 帳戶 (PDA)"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1344,10 +1310,7 @@ export type Zuvi = {
           }
         },
         {
-          "name": "usdcMint",
-          "docs": [
-            "USDC Mint"
-          ]
+          "name": "usdcMint"
         },
         {
           "name": "tokenProgram",
@@ -1366,10 +1329,6 @@ export type Zuvi = {
     },
     {
       "name": "toggleListing",
-      "docs": [
-        "切換房源狀態",
-        "在可用和下架之間切換"
-      ],
       "discriminator": [
         143,
         108,
@@ -1418,10 +1377,6 @@ export type Zuvi = {
     },
     {
       "name": "updateListing",
-      "docs": [
-        "更新房源資訊",
-        "只能更新未出租的房源"
-      ],
       "discriminator": [
         192,
         174,

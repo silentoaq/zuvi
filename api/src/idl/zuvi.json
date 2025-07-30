@@ -9,10 +9,6 @@
   "instructions": [
     {
       "name": "apply_lease",
-      "docs": [
-        "申請租賃",
-        "提交租賃申請和相關資料"
-      ],
       "discriminator": [
         81,
         96,
@@ -25,10 +21,25 @@
       ],
       "accounts": [
         {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "listing",
-          "docs": [
-            "房源列表帳戶"
-          ],
           "pda": {
             "seeds": [
               {
@@ -50,9 +61,6 @@
         },
         {
           "name": "application",
-          "docs": [
-            "申請帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -79,23 +87,18 @@
         },
         {
           "name": "applicant",
-          "docs": [
-            "申請人（支付者）"
-          ],
           "writable": true,
           "signer": true
         },
         {
-          "name": "tenant_attest",
-          "docs": [
-            "承租人憑證帳戶"
-          ]
+          "name": "api_signer",
+          "signer": true
+        },
+        {
+          "name": "tenant_attest"
         },
         {
           "name": "system_program",
-          "docs": [
-            "系統程式"
-          ],
           "address": "11111111111111111111111111111111"
         }
       ],
@@ -113,10 +116,6 @@
     },
     {
       "name": "approve_application",
-      "docs": [
-        "核准申請",
-        "房東核准特定申請人"
-      ],
       "discriminator": [
         136,
         47,
@@ -198,11 +197,32 @@
       ]
     },
     {
-      "name": "confirm_release",
-      "docs": [
-        "確認押金結算",
-        "另一方確認押金分配"
+      "name": "close_application",
+      "discriminator": [
+        185,
+        123,
+        65,
+        93,
+        138,
+        249,
+        205,
+        150
       ],
+      "accounts": [
+        {
+          "name": "application",
+          "writable": true
+        },
+        {
+          "name": "applicant",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "confirm_release",
       "discriminator": [
         181,
         157,
@@ -216,9 +236,6 @@
       "accounts": [
         {
           "name": "config",
-          "docs": [
-            "系統配置"
-          ],
           "pda": {
             "seeds": [
               {
@@ -237,9 +254,6 @@
         },
         {
           "name": "lease",
-          "docs": [
-            "租約"
-          ],
           "pda": {
             "seeds": [
               {
@@ -261,15 +275,17 @@
                 "kind": "account",
                 "path": "lease.tenant",
                 "account": "Lease"
+              },
+              {
+                "kind": "account",
+                "path": "lease.start_date",
+                "account": "Lease"
               }
             ]
           }
         },
         {
           "name": "escrow",
-          "docs": [
-            "押金託管帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -293,30 +309,18 @@
         },
         {
           "name": "signer",
-          "docs": [
-            "確認人（房東或承租人）"
-          ],
           "signer": true
         },
         {
           "name": "escrow_token",
-          "docs": [
-            "Escrow Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "landlord_token",
-          "docs": [
-            "房東 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "tenant_token",
-          "docs": [
-            "承租人 Token 帳戶"
-          ],
           "writable": true
         },
         {
@@ -328,10 +332,6 @@
     },
     {
       "name": "create_lease",
-      "docs": [
-        "創建租約",
-        "房東發起租約，設定條款"
-      ],
       "discriminator": [
         158,
         42,
@@ -345,9 +345,6 @@
       "accounts": [
         {
           "name": "listing",
-          "docs": [
-            "房源列表帳戶"
-          ],
           "pda": {
             "seeds": [
               {
@@ -369,9 +366,6 @@
         },
         {
           "name": "application",
-          "docs": [
-            "申請帳戶（用於驗證）"
-          ],
           "pda": {
             "seeds": [
               {
@@ -398,9 +392,6 @@
         },
         {
           "name": "lease",
-          "docs": [
-            "租約帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -419,26 +410,23 @@
                 "path": "listing"
               },
               {
-                "kind": "account",
-                "path": "application.applicant",
-                "account": "Application"
+                "kind": "arg",
+                "path": "applicant"
+              },
+              {
+                "kind": "arg",
+                "path": "start_date"
               }
             ]
           }
         },
         {
           "name": "landlord",
-          "docs": [
-            "房東（支付者）"
-          ],
           "writable": true,
           "signer": true
         },
         {
           "name": "system_program",
-          "docs": [
-            "系統程式"
-          ],
           "address": "11111111111111111111111111111111"
         }
       ],
@@ -472,10 +460,6 @@
     },
     {
       "name": "create_listing",
-      "docs": [
-        "創建房源列表",
-        "需要 API 簽名，驗證產權憑證後創建"
-      ],
       "discriminator": [
         18,
         168,
@@ -596,10 +580,6 @@
     },
     {
       "name": "initialize",
-      "docs": [
-        "初始化系統配置",
-        "設定 API 簽名者、仲裁者、費用接收者、USDC mint 和費率"
-      ],
       "discriminator": [
         175,
         175,
@@ -674,10 +654,6 @@
     },
     {
       "name": "initiate_release",
-      "docs": [
-        "發起押金結算",
-        "任一方發起押金分配方案"
-      ],
       "discriminator": [
         207,
         117,
@@ -691,9 +667,6 @@
       "accounts": [
         {
           "name": "lease",
-          "docs": [
-            "租約"
-          ],
           "pda": {
             "seeds": [
               {
@@ -715,15 +688,17 @@
                 "kind": "account",
                 "path": "lease.tenant",
                 "account": "Lease"
+              },
+              {
+                "kind": "account",
+                "path": "lease.start_date",
+                "account": "Lease"
               }
             ]
           }
         },
         {
           "name": "escrow",
-          "docs": [
-            "押金託管帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -747,9 +722,6 @@
         },
         {
           "name": "signer",
-          "docs": [
-            "發起人（房東或承租人）"
-          ],
           "signer": true
         }
       ],
@@ -766,10 +738,6 @@
     },
     {
       "name": "pay_rent",
-      "docs": [
-        "支付租金",
-        "每月定期支付租金"
-      ],
       "discriminator": [
         69,
         155,
@@ -783,9 +751,6 @@
       "accounts": [
         {
           "name": "config",
-          "docs": [
-            "系統配置"
-          ],
           "pda": {
             "seeds": [
               {
@@ -804,9 +769,6 @@
         },
         {
           "name": "lease",
-          "docs": [
-            "租約"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -829,37 +791,30 @@
                 "kind": "account",
                 "path": "lease.tenant",
                 "account": "Lease"
+              },
+              {
+                "kind": "account",
+                "path": "lease.start_date",
+                "account": "Lease"
               }
             ]
           }
         },
         {
           "name": "tenant",
-          "docs": [
-            "承租人"
-          ],
           "writable": true,
           "signer": true
         },
         {
           "name": "tenant_token",
-          "docs": [
-            "承租人 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "landlord_token",
-          "docs": [
-            "房東 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "fee_receiver_token",
-          "docs": [
-            "平台費接收者 Token 帳戶"
-          ],
           "writable": true
         },
         {
@@ -871,10 +826,6 @@
     },
     {
       "name": "raise_dispute",
-      "docs": [
-        "發起爭議",
-        "對押金分配有異議時發起"
-      ],
       "discriminator": [
         41,
         243,
@@ -888,9 +839,6 @@
       "accounts": [
         {
           "name": "lease",
-          "docs": [
-            "租約"
-          ],
           "pda": {
             "seeds": [
               {
@@ -912,15 +860,17 @@
                 "kind": "account",
                 "path": "lease.tenant",
                 "account": "Lease"
+              },
+              {
+                "kind": "account",
+                "path": "lease.start_date",
+                "account": "Lease"
               }
             ]
           }
         },
         {
           "name": "escrow",
-          "docs": [
-            "押金託管帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -944,9 +894,6 @@
         },
         {
           "name": "dispute",
-          "docs": [
-            "爭議帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -971,17 +918,11 @@
         },
         {
           "name": "initiator",
-          "docs": [
-            "發起人（房東或承租人）"
-          ],
           "writable": true,
           "signer": true
         },
         {
           "name": "system_program",
-          "docs": [
-            "系統程式"
-          ],
           "address": "11111111111111111111111111111111"
         }
       ],
@@ -993,11 +934,80 @@
       ]
     },
     {
-      "name": "resolve_dispute",
-      "docs": [
-        "解決爭議",
-        "仲裁者裁決押金分配"
+      "name": "reject_application",
+      "discriminator": [
+        85,
+        73,
+        224,
+        47,
+        9,
+        184,
+        39,
+        217
       ],
+      "accounts": [
+        {
+          "name": "listing",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "listing.property_attest",
+                "account": "Listing"
+              }
+            ]
+          }
+        },
+        {
+          "name": "application",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  112,
+                  112,
+                  108,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "listing"
+              },
+              {
+                "kind": "account",
+                "path": "application.applicant",
+                "account": "Application"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "applicant",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "resolve_dispute",
       "discriminator": [
         231,
         6,
@@ -1011,9 +1021,6 @@
       "accounts": [
         {
           "name": "config",
-          "docs": [
-            "系統配置"
-          ],
           "pda": {
             "seeds": [
               {
@@ -1032,9 +1039,6 @@
         },
         {
           "name": "lease",
-          "docs": [
-            "租約"
-          ],
           "pda": {
             "seeds": [
               {
@@ -1056,15 +1060,17 @@
                 "kind": "account",
                 "path": "lease.tenant",
                 "account": "Lease"
+              },
+              {
+                "kind": "account",
+                "path": "lease.start_date",
+                "account": "Lease"
               }
             ]
           }
         },
         {
           "name": "escrow",
-          "docs": [
-            "押金託管帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1088,9 +1094,6 @@
         },
         {
           "name": "dispute",
-          "docs": [
-            "爭議帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1115,30 +1118,18 @@
         },
         {
           "name": "arbitrator",
-          "docs": [
-            "仲裁者"
-          ],
           "signer": true
         },
         {
           "name": "escrow_token",
-          "docs": [
-            "Escrow Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "landlord_token",
-          "docs": [
-            "房東 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "tenant_token",
-          "docs": [
-            "承租人 Token 帳戶"
-          ],
           "writable": true
         },
         {
@@ -1159,10 +1150,6 @@
     },
     {
       "name": "sign_lease",
-      "docs": [
-        "簽署租約",
-        "承租人簽署並支付押金和首期租金"
-      ],
       "discriminator": [
         135,
         105,
@@ -1176,9 +1163,6 @@
       "accounts": [
         {
           "name": "config",
-          "docs": [
-            "系統配置"
-          ],
           "pda": {
             "seeds": [
               {
@@ -1197,9 +1181,6 @@
         },
         {
           "name": "listing",
-          "docs": [
-            "房源列表"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1222,9 +1203,6 @@
         },
         {
           "name": "lease",
-          "docs": [
-            "租約"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1240,11 +1218,17 @@
               },
               {
                 "kind": "account",
-                "path": "listing"
+                "path": "lease.listing",
+                "account": "Lease"
               },
               {
                 "kind": "account",
                 "path": "lease.tenant",
+                "account": "Lease"
+              },
+              {
+                "kind": "account",
+                "path": "lease.start_date",
                 "account": "Lease"
               }
             ]
@@ -1252,9 +1236,6 @@
         },
         {
           "name": "escrow",
-          "docs": [
-            "押金託管帳戶"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1278,38 +1259,23 @@
         },
         {
           "name": "tenant",
-          "docs": [
-            "承租人"
-          ],
           "writable": true,
           "signer": true
         },
         {
           "name": "tenant_token",
-          "docs": [
-            "承租人 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "landlord_token",
-          "docs": [
-            "房東 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "fee_receiver_token",
-          "docs": [
-            "平台費接收者 Token 帳戶"
-          ],
           "writable": true
         },
         {
           "name": "escrow_token",
-          "docs": [
-            "Escrow Token 帳戶 (PDA)"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1338,10 +1304,7 @@
           }
         },
         {
-          "name": "usdc_mint",
-          "docs": [
-            "USDC Mint"
-          ]
+          "name": "usdc_mint"
         },
         {
           "name": "token_program",
@@ -1360,10 +1323,6 @@
     },
     {
       "name": "toggle_listing",
-      "docs": [
-        "切換房源狀態",
-        "在可用和下架之間切換"
-      ],
       "discriminator": [
         143,
         108,
@@ -1412,10 +1371,6 @@
     },
     {
       "name": "update_listing",
-      "docs": [
-        "更新房源資訊",
-        "只能更新未出租的房源"
-      ],
       "discriminator": [
         192,
         174,

@@ -47,7 +47,7 @@ export class StorageService {
     if (cached) return cached;
 
     try {
-      const url = `${process.env.PINATA_GATEWAY}/ipfs/${ipfsHash}`;
+      const url = `https://${process.env.PINATA_GATEWAY}/ipfs/${ipfsHash}`;
       const response = await fetch(url);
       
       if (!response.ok) {

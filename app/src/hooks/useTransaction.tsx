@@ -18,7 +18,7 @@ interface TransactionState {
 }
 
 export const useTransaction = (options: UseTransactionOptions = {}) => {
-  const { signTransaction } = useWallet()
+  const { signTransaction, publicKey } = useWallet()
   const [state, setState] = useState<TransactionState>({
     isLoading: false,
     error: null,
@@ -27,11 +27,13 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
   
   const isProcessingRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const lastTransactionRef = useRef<string | null>(null)
+  const processedTransactionsRef = useRef<Set<string>>(new Set())
 
   const {
     onSuccess,
     onError,
-    maxRetries = 3,
+    maxRetries = 2,
     skipPreflight = false,
     commitment = 'confirmed'
   } = options
@@ -45,6 +47,11 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
     )
   }, [commitment])
 
+  const getTransactionId = useCallback((transaction: Transaction): string => {
+    const serialized = transaction.serialize({ requireAllSignatures: false })
+    return Buffer.from(serialized).toString('base64')
+  }, [])
+
   const sendTransactionWithRetry = useCallback(async (
     transaction: Transaction,
     retryCount = 0
@@ -56,41 +63,91 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
         throw new Error('Transaction was cancelled')
       }
 
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash(commitment)
-      transaction.recentBlockhash = blockhash
-      transaction.lastValidBlockHeight = lastValidBlockHeight
-
-      if (!signTransaction) {
-        throw new Error('Wallet not connected or does not support signing')
-      }
-
-      const signedTransaction = await signTransaction(transaction)
+      // 生成交易ID以防止重複
+      const transactionId = getTransactionId(transaction)
       
-      if (abortControllerRef.current?.signal.aborted) {
-        throw new Error('Transaction was cancelled')
+      // 檢查是否已經處理過這筆交易
+      if (processedTransactionsRef.current.has(transactionId)) {
+        throw new Error('Transaction already in progress')
       }
 
-      const signature = await connection.sendRawTransaction(
-        signedTransaction.serialize(),
-        {
-          skipPreflight,
-          maxRetries: 0
+      // 標記交易為處理中
+      processedTransactionsRef.current.add(transactionId)
+
+      try {
+        const needsBlockhash = !transaction.recentBlockhash
+        const needsFeePayer = !transaction.feePayer
+
+        if (needsBlockhash || needsFeePayer) {
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash(commitment)
+          
+          if (needsBlockhash) {
+            transaction.recentBlockhash = blockhash
+            transaction.lastValidBlockHeight = lastValidBlockHeight
+          }
+          
+          if (needsFeePayer && publicKey) {
+            transaction.feePayer = publicKey
+          }
         }
-      )
 
-      await connection.confirmTransaction({
-        signature,
-        blockhash,
-        lastValidBlockHeight
-      }, commitment)
+        if (!signTransaction) {
+          throw new Error('Wallet not connected or does not support signing')
+        }
 
-      return signature
+        const signedTransaction = await signTransaction(transaction)
+        
+        if (abortControllerRef.current?.signal.aborted) {
+          throw new Error('Transaction was cancelled')
+        }
+
+        const signature = await connection.sendRawTransaction(
+          signedTransaction.serialize(),
+          {
+            skipPreflight,
+            maxRetries: 0
+          }
+        )
+
+        // 記錄最後的交易簽名
+        lastTransactionRef.current = signature
+
+        const confirmationBlockhash = transaction.recentBlockhash!
+        const confirmationHeight = transaction.lastValidBlockHeight || undefined
+
+        if (confirmationHeight) {
+          await connection.confirmTransaction({
+            signature,
+            blockhash: confirmationBlockhash,
+            lastValidBlockHeight: confirmationHeight
+          }, commitment)
+        } else {
+          await connection.confirmTransaction(signature, commitment)
+        }
+
+        return signature
+
+      } finally {
+        // 清除處理標記
+        processedTransactionsRef.current.delete(transactionId)
+      }
 
     } catch (error: any) {
       console.error(`Transaction attempt ${retryCount + 1} failed:`, error)
 
       if (abortControllerRef.current?.signal.aborted) {
         throw new Error('Transaction was cancelled')
+      }
+
+      // 檢查是否為重複交易錯誤
+      const isDuplicateError = 
+        error.message?.includes('This transaction has already been processed') ||
+        error.message?.includes('Transaction already in progress')
+
+      // 如果是重複交易且有最後的簽名，視為成功
+      if (isDuplicateError && lastTransactionRef.current) {
+        console.log('Transaction already processed, using cached signature:', lastTransactionRef.current)
+        return lastTransactionRef.current
       }
 
       const isBlockhashError = 
@@ -103,24 +160,46 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
         error.message?.includes('network') ||
         error.code === 'NETWORK_ERROR'
 
+      const isSignatureError = 
+        error.message?.includes('WalletSignTransactionError') ||
+        error.message?.includes('Unexpected error')
+
+      // 對於簽名錯誤，嘗試清除參數重試一次
+      if (isSignatureError && retryCount === 0) {
+        const cleanTransaction = Transaction.from(transaction.serialize({ requireAllSignatures: false }))
+        cleanTransaction.recentBlockhash = undefined
+        cleanTransaction.lastValidBlockHeight = undefined
+        cleanTransaction.signatures = []
+        
+        console.log('Retrying with clean transaction parameters...')
+        return sendTransactionWithRetry(cleanTransaction, retryCount + 1)
+      }
+
+      // 對於區塊哈希或網絡錯誤進行重試
       if ((isBlockhashError || isNetworkError) && retryCount < maxRetries) {
         console.log(`Retrying transaction (${retryCount + 1}/${maxRetries})...`)
         
         await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount)))
+        
+        if (isBlockhashError) {
+          transaction.recentBlockhash = undefined
+          transaction.lastValidBlockHeight = undefined
+        }
         
         return sendTransactionWithRetry(transaction, retryCount + 1)
       }
 
       throw error
     }
-  }, [signTransaction, commitment, skipPreflight, maxRetries, getConnection])
+  }, [signTransaction, publicKey, commitment, skipPreflight, maxRetries, getConnection, getTransactionId])
 
   const executeTransaction = useCallback(async (
     transactionOrInstructions: Transaction | TransactionInstruction[]
   ) => {
+    // 防止重複執行
     if (isProcessingRef.current) {
       console.warn('Transaction already in progress, ignoring duplicate request')
-      return
+      return lastTransactionRef.current
     }
 
     isProcessingRef.current = true
@@ -158,7 +237,18 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
       return signature
 
     } catch (error: any) {
-      const errorMessage = error.message || 'Transaction failed'
+      let errorMessage = error.message || 'Transaction failed'
+      
+      // 對於重複交易錯誤，如果有簽名則視為成功
+      if (errorMessage.includes('This transaction has already been processed') && lastTransactionRef.current) {
+        setState({
+          isLoading: false,
+          error: null,
+          signature: lastTransactionRef.current
+        })
+        onSuccess?.(lastTransactionRef.current)
+        return lastTransactionRef.current
+      }
       
       setState({
         isLoading: false,
@@ -168,7 +258,7 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
 
       console.error('Transaction failed:', error)
       
-      if (!errorMessage.includes('cancelled')) {
+      if (!errorMessage.includes('cancelled') && !errorMessage.includes('already in progress')) {
         toast.error(errorMessage)
         onError?.(error)
       }
@@ -179,7 +269,7 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
       isProcessingRef.current = false
       abortControllerRef.current = null
     }
-  }, [signTransaction, sendTransactionWithRetry, onSuccess, onError])
+  }, [signTransaction, publicKey, sendTransactionWithRetry, onSuccess, onError])
 
   const reset = useCallback(() => {
     if (abortControllerRef.current && !abortControllerRef.current.signal.aborted) {
@@ -187,6 +277,8 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
     }
     
     isProcessingRef.current = false
+    lastTransactionRef.current = null
+    processedTransactionsRef.current.clear()
     
     setState({
       isLoading: false,

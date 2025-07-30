@@ -4,6 +4,7 @@ use crate::{constants::*, errors::*, state::*};
 pub fn create_lease(
     ctx: Context<CreateLease>,
     applicant: Pubkey,
+    _application_created_at: i64,
     start_date: i64,
     end_date: i64,
     payment_day: u8,
@@ -73,7 +74,7 @@ pub fn create_lease(
 }
 
 #[derive(Accounts)]
-#[instruction(applicant: Pubkey, start_date: i64)]
+#[instruction(applicant: Pubkey, _application_created_at: i64, start_date: i64)]
 pub struct CreateLease<'info> {
     #[account(
         seeds = [LISTING_SEED, listing.property_attest.as_ref()],
@@ -82,7 +83,7 @@ pub struct CreateLease<'info> {
     pub listing: Account<'info, Listing>,
     
     #[account(
-        seeds = [APPLICATION_SEED, listing.key().as_ref(), application.applicant.as_ref()],
+        seeds = [APPLICATION_SEED, listing.key().as_ref(), applicant.as_ref(), &_application_created_at.to_le_bytes()],
         bump
     )]
     pub application: Account<'info, Application>,

@@ -4,6 +4,7 @@ use crate::{constants::*, errors::*, state::*};
 pub fn apply_lease(
     ctx: Context<ApplyLease>,
     message_uri: [u8; 64],
+    created_at: i64,
 ) -> Result<()> {
     let config = &ctx.accounts.config;
     let listing = &ctx.accounts.listing;
@@ -30,14 +31,13 @@ pub fn apply_lease(
     );
     
     let application = &mut ctx.accounts.application;
-    let clock = Clock::get()?;
     
     application.listing = listing.key();
     application.applicant = applicant.key();
     application.tenant_attest = ctx.accounts.tenant_attest.key();
     application.message_uri = message_uri;
     application.status = APPLICATION_STATUS_PENDING;
-    application.created_at = clock.unix_timestamp;
+    application.created_at = created_at;
     
     msg!("租賃申請已提交");
     msg!("申請人: {}", application.applicant);
@@ -47,6 +47,7 @@ pub fn apply_lease(
 }
 
 #[derive(Accounts)]
+#[instruction(message_uri: [u8; 64], created_at: i64)]
 pub struct ApplyLease<'info> {
     #[account(seeds = [CONFIG_SEED], bump)]
     pub config: Account<'info, Config>,
@@ -61,7 +62,7 @@ pub struct ApplyLease<'info> {
         init,
         payer = applicant,
         space = APPLICATION_SIZE,
-        seeds = [APPLICATION_SEED, listing.key().as_ref(), applicant.key().as_ref()],
+        seeds = [APPLICATION_SEED, listing.key().as_ref(), applicant.key().as_ref(), &created_at.to_le_bytes()],
         bump
     )]
     pub application: Account<'info, Application>,

@@ -4,6 +4,7 @@ use crate::{constants::*, errors::*, state::*};
 pub fn reject_application(
     ctx: Context<RejectApplication>,
     applicant: Pubkey,
+    _created_at: i64,
 ) -> Result<()> {
     let listing = &ctx.accounts.listing;
     let application = &mut ctx.accounts.application;
@@ -33,6 +34,7 @@ pub fn reject_application(
 }
 
 #[derive(Accounts)]
+#[instruction(applicant: Pubkey, _created_at: i64)]
 pub struct RejectApplication<'info> {
     #[account(
         seeds = [LISTING_SEED, listing.property_attest.as_ref()],
@@ -42,7 +44,7 @@ pub struct RejectApplication<'info> {
     
     #[account(
         mut,
-        seeds = [APPLICATION_SEED, listing.key().as_ref(), application.applicant.as_ref()],
+        seeds = [APPLICATION_SEED, listing.key().as_ref(), applicant.as_ref(), &_created_at.to_le_bytes()],
         bump,
         constraint = application.listing == listing.key()
     )]

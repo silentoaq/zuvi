@@ -22,10 +22,13 @@ pub fn close_application(ctx: Context<CloseApplication>) -> Result<()> {
 }
 
 #[derive(Accounts)]
+#[instruction(_applicant: Pubkey, _created_at: i64)]
 pub struct CloseApplication<'info> {
     #[account(
         mut,
         close = applicant,
+        seeds = [APPLICATION_SEED, application.listing.as_ref(), applicant.key().as_ref(), &_created_at.to_le_bytes()],
+        bump,
         constraint = application.applicant == applicant.key()
     )]
     pub application: Account<'info, Application>,

@@ -49,31 +49,32 @@ pub mod zuvi {
         instructions::toggle_listing(ctx)
     }
 
-    pub fn apply_lease(ctx: Context<ApplyLease>, message_uri: [u8; 64]) -> Result<()> {
-        instructions::apply_lease(ctx, message_uri)
+    pub fn apply_lease(ctx: Context<ApplyLease>, message_uri: [u8; 64], created_at: i64) -> Result<()> {
+        instructions::apply_lease(ctx, message_uri, created_at)
     }
 
-    pub fn close_application(ctx: Context<CloseApplication>) -> Result<()> {
+    pub fn close_application(ctx: Context<CloseApplication>, _applicant: Pubkey, _created_at: i64) -> Result<()> {
         instructions::close_application(ctx)
     }
 
-    pub fn approve_application(ctx: Context<ApproveApplication>, applicant: Pubkey) -> Result<()> {
-        instructions::approve_application(ctx, applicant)
+    pub fn approve_application(ctx: Context<ApproveApplication>, applicant: Pubkey, _created_at: i64) -> Result<()> {
+        instructions::approve_application(ctx, applicant, _created_at)
     }
 
-    pub fn reject_application(ctx: Context<RejectApplication>, applicant: Pubkey) -> Result<()> {
-        instructions::reject_application(ctx, applicant)
+    pub fn reject_application(ctx: Context<RejectApplication>, applicant: Pubkey, _created_at: i64) -> Result<()> {
+        instructions::reject_application(ctx, applicant, _created_at)
     }
 
     pub fn create_lease(
         ctx: Context<CreateLease>,
         applicant: Pubkey,
+        _application_created_at: i64,
         start_date: i64,
         end_date: i64,
         payment_day: u8,
         contract_uri: [u8; 64],
     ) -> Result<()> {
-        instructions::create_lease(ctx, applicant, start_date, end_date, payment_day, contract_uri)
+        instructions::create_lease(ctx, applicant, _application_created_at, start_date, end_date, payment_day, contract_uri)
     }
 
     pub fn sign_lease(ctx: Context<SignLease>) -> Result<()> {

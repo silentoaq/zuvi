@@ -1,68 +1,74 @@
 import { Router } from 'express';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
 import { program, derivePDAs, apiSignerWallet } from '../config/solana';
+import { CredentialService } from '../services/credential';
 import { StorageService } from '../services/storage';
 import { ApiError } from '../middleware/errorHandler';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, requireCitizenCredential } from '../middleware/auth';
 import { broadcastToUser } from '../ws/websocket';
+import { BN } from '@coral-xyz/anchor';
 
 const router = Router();
 
-// 申請租賃
-router.post('/apply', async (req: AuthRequest, res, next) => {
+router.post('/apply', requireCitizenCredential, async (req: AuthRequest, res, next) => {
   try {
-    const { listing, tenantAttest, message } = req.body;
+    const { listing, message } = req.body;
     const userPublicKey = new PublicKey(req.user!.publicKey);
 
-    if (!listing || !tenantAttest || !message) {
+    if (!listing || !message) {
       throw new ApiError(400, 'Missing required fields');
     }
 
     const listingPubkey = new PublicKey(listing);
-    const tenantAttestPubkey = new PublicKey(tenantAttest);
-    
-    // 檢查房源狀態
     const listingAccount = await program.account.listing.fetch(listingPubkey);
+
     if (listingAccount.status !== 0) {
-      throw new ApiError(400, 'Listing not available');
+      throw new ApiError(400, 'Listing is not available');
     }
 
-    // 檢查是否為自己的房源
-    if (listingAccount.owner.equals(userPublicKey)) {
-      throw new ApiError(400, 'Cannot apply to own listing');
+    const status = await CredentialService.getCredentialStatus(req.user!.publicKey);
+    if (!status.twfido?.exists) {
+      throw new ApiError(403, 'Citizen credential required');
     }
 
-    // 上傳申請資料到 IPFS
-    const ipfsResult = await StorageService.uploadJSON(message, 'apply', req.user!.publicKey);
-    
-    const [applicationPda] = derivePDAs.application(listingPubkey, userPublicKey);
+    const createdAt = new BN(Math.floor(Date.now() / 1000));
+    const ipfsResult = await StorageService.uploadJSON(message, 'application', req.user!.publicKey);
+    const messageUriBytes = StorageService.ipfsHashToBytes(ipfsResult.ipfsHash);
 
-    const [configPda] = derivePDAs.config();
+    const [applicationPda] = derivePDAs.application(listingPubkey, userPublicKey, createdAt);
 
     const tx = await program.methods
-      .applyLease(StorageService.ipfsHashToBytes(ipfsResult.ipfsHash))
+      .applyLease(
+        Array.from(messageUriBytes),
+        createdAt
+      )
       .accountsStrict({
-        config: configPda,
+        config: derivePDAs.config()[0],
         listing: listingPubkey,
         application: applicationPda,
         applicant: userPublicKey,
         apiSigner: apiSignerWallet.publicKey,
-        tenantAttest: tenantAttestPubkey,
+        tenantAttest: new PublicKey(status.twfido.address!),
         systemProgram: SystemProgram.programId,
       })
       .transaction();
 
-    // 設置 recentBlockhash
     const { blockhash } = await program.provider.connection.getLatestBlockhash();
     tx.recentBlockhash = blockhash;
     tx.feePayer = userPublicKey;
     
-    // API 簽名者簽署交易
     tx.partialSign(apiSignerWallet.payer);
 
     const serialized = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false
+    });
+
+    broadcastToUser(listingAccount.owner.toString(), {
+      type: 'new_application',
+      listing: listing,
+      applicant: req.user!.publicKey,
+      message: '有新的租房申請'
     });
 
     res.json({
@@ -76,20 +82,17 @@ router.post('/apply', async (req: AuthRequest, res, next) => {
   }
 });
 
-// 查詢房源的所有申請 (房東用)
 router.get('/listing/:listing', async (req: AuthRequest, res, next) => {
   try {
     const { listing } = req.params;
     const userPublicKey = new PublicKey(req.user!.publicKey);
     const listingPubkey = new PublicKey(listing);
 
-    // 檢查是否為房東
     const listingAccount = await program.account.listing.fetch(listingPubkey);
     if (!listingAccount.owner.equals(userPublicKey)) {
       throw new ApiError(403, 'Not the owner of this listing');
     }
 
-    // 獲取所有申請
     const applications = await program.account.application.all([
       {
         memcmp: {
@@ -99,7 +102,6 @@ router.get('/listing/:listing', async (req: AuthRequest, res, next) => {
       }
     ]);
 
-    // 加載 IPFS 資料
     const enriched = await Promise.all(
       applications.map(async (app) => {
         const ipfsHash = StorageService.bytesToIpfsHash(app.account.messageUri);
@@ -126,7 +128,6 @@ router.get('/listing/:listing', async (req: AuthRequest, res, next) => {
   }
 });
 
-// 查詢用戶的所有申請
 router.get('/my', async (req: AuthRequest, res, next) => {
   try {
     const userPublicKey = new PublicKey(req.user!.publicKey);
@@ -142,18 +143,17 @@ router.get('/my', async (req: AuthRequest, res, next) => {
 
     const enriched = await Promise.all(
       applications.map(async (app) => {
-        const ipfsHash = StorageService.bytesToIpfsHash(app.account.messageUri);
-        const message = await StorageService.getJSON(ipfsHash);
-        
-        // 獲取房源資訊
         const listing = await program.account.listing.fetch(app.account.listing);
         const listingIpfsHash = StorageService.bytesToIpfsHash(listing.metadataUri);
         const listingMetadata = await StorageService.getJSON(listingIpfsHash);
-        
+
+        const appIpfsHash = StorageService.bytesToIpfsHash(app.account.messageUri);
+        const message = await StorageService.getJSON(appIpfsHash);
+
         return {
           publicKey: app.publicKey.toString(),
-          listing: app.account.listing.toString(),
-          listingInfo: {
+          listing: {
+            publicKey: app.account.listing.toString(),
             address: Buffer.from(listing.address).toString('utf8').replace(/\0/g, ''),
             rent: listing.rent.toString(),
             deposit: listing.deposit.toString(),
@@ -161,8 +161,7 @@ router.get('/my', async (req: AuthRequest, res, next) => {
           },
           status: app.account.status,
           createdAt: app.account.createdAt.toNumber(),
-          messageData: message,
-          ipfsHash
+          message
         };
       })
     );
@@ -176,32 +175,57 @@ router.get('/my', async (req: AuthRequest, res, next) => {
   }
 });
 
-// 核准申請 (房東用)
 router.post('/:listing/approve/:applicant', async (req: AuthRequest, res, next) => {
   try {
     const { listing, applicant } = req.params;
     const userPublicKey = new PublicKey(req.user!.publicKey);
+
     const listingPubkey = new PublicKey(listing);
     const applicantPubkey = new PublicKey(applicant);
 
-    // 檢查是否為房東
     const listingAccount = await program.account.listing.fetch(listingPubkey);
     if (!listingAccount.owner.equals(userPublicKey)) {
       throw new ApiError(403, 'Not the owner of this listing');
     }
 
-    const [applicationPda] = derivePDAs.application(listingPubkey, applicantPubkey);
+    const applications = await program.account.application.all([
+      {
+        memcmp: {
+          offset: 8,
+          bytes: listingPubkey.toBase58()
+        }
+      },
+      {
+        memcmp: {
+          offset: 8 + 32,
+          bytes: applicantPubkey.toBase58()
+        }
+      }
+    ]);
+
+    if (applications.length === 0) {
+      throw new ApiError(404, 'Application not found');
+    }
+
+    const application = applications[0];
+    if (application.account.status !== 0) {
+      throw new ApiError(400, 'Application already processed');
+    }
+
+    const applicationCreatedAt = application.account.createdAt;
 
     const tx = await program.methods
-      .approveApplication(applicantPubkey)
+      .approveApplication(
+        applicantPubkey,
+        applicationCreatedAt
+      )
       .accountsStrict({
         listing: listingPubkey,
-        application: applicationPda,
+        application: application.publicKey,
         owner: userPublicKey,
       })
       .transaction();
 
-    // 設置 recentBlockhash
     const { blockhash } = await program.provider.connection.getLatestBlockhash();
     tx.recentBlockhash = blockhash;
     tx.feePayer = userPublicKey;
@@ -211,12 +235,11 @@ router.post('/:listing/approve/:applicant', async (req: AuthRequest, res, next) 
       verifySignatures: false
     });
 
-    // 通知承租人申請已核准
     broadcastToUser(applicant, {
       type: 'application_approved',
       listing: listing,
-      landlord: userPublicKey.toString(),
-      message: '您的租賃申請已被核准'
+      landlord: req.user!.publicKey,
+      message: '您的租房申請已被批准'
     });
 
     res.json({
@@ -228,32 +251,57 @@ router.post('/:listing/approve/:applicant', async (req: AuthRequest, res, next) 
   }
 });
 
-// 拒絕申請 (房東用)
 router.post('/:listing/reject/:applicant', async (req: AuthRequest, res, next) => {
   try {
     const { listing, applicant } = req.params;
     const userPublicKey = new PublicKey(req.user!.publicKey);
+
     const listingPubkey = new PublicKey(listing);
     const applicantPubkey = new PublicKey(applicant);
 
-    // 檢查是否為房東
     const listingAccount = await program.account.listing.fetch(listingPubkey);
     if (!listingAccount.owner.equals(userPublicKey)) {
       throw new ApiError(403, 'Not the owner of this listing');
     }
 
-    const [applicationPda] = derivePDAs.application(listingPubkey, applicantPubkey);
+    const applications = await program.account.application.all([
+      {
+        memcmp: {
+          offset: 8,
+          bytes: listingPubkey.toBase58()
+        }
+      },
+      {
+        memcmp: {
+          offset: 8 + 32,
+          bytes: applicantPubkey.toBase58()
+        }
+      }
+    ]);
+
+    if (applications.length === 0) {
+      throw new ApiError(404, 'Application not found');
+    }
+
+    const application = applications[0];
+    if (application.account.status !== 0) {
+      throw new ApiError(400, 'Application already processed');
+    }
+
+    const applicationCreatedAt = application.account.createdAt;
 
     const tx = await program.methods
-      .rejectApplication(applicantPubkey)
+      .rejectApplication(
+        applicantPubkey,
+        applicationCreatedAt
+      )
       .accountsStrict({
         listing: listingPubkey,
-        application: applicationPda,
+        application: application.publicKey,
         owner: userPublicKey,
       })
       .transaction();
 
-    // 設置 recentBlockhash
     const { blockhash } = await program.provider.connection.getLatestBlockhash();
     tx.recentBlockhash = blockhash;
     tx.feePayer = userPublicKey;
@@ -263,66 +311,11 @@ router.post('/:listing/reject/:applicant', async (req: AuthRequest, res, next) =
       verifySignatures: false
     });
 
-    // 通知承租人申請已拒絕
     broadcastToUser(applicant, {
       type: 'application_rejected',
       listing: listing,
-      landlord: userPublicKey.toString(),
-      message: '您的租賃申請已被拒絕'
-    });
-
-    res.json({
-      success: true,
-      transaction: serialized.toString('base64')
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// 關閉申請 (承租人用)
-router.delete('/:application', async (req: AuthRequest, res, next) => {
-  try {
-    const { application } = req.params;
-    const userPublicKey = new PublicKey(req.user!.publicKey);
-    const applicationPubkey = new PublicKey(application);
-
-    // 檢查是否為申請人
-    const applicationAccount = await program.account.application.fetch(applicationPubkey);
-    if (!applicationAccount.applicant.equals(userPublicKey)) {
-      throw new ApiError(403, 'Not the applicant of this application');
-    }
-
-    // 檢查申請狀態
-    if (applicationAccount.status !== 0) {
-      throw new ApiError(400, 'Can only close pending applications');
-    }
-
-    const tx = await program.methods
-      .closeApplication()
-      .accountsStrict({
-        application: applicationPubkey,
-        applicant: userPublicKey,
-      })
-      .transaction();
-
-    // 設置 recentBlockhash
-    const { blockhash } = await program.provider.connection.getLatestBlockhash();
-    tx.recentBlockhash = blockhash;
-    tx.feePayer = userPublicKey;
-
-    const serialized = tx.serialize({
-      requireAllSignatures: false,
-      verifySignatures: false
-    });
-
-    // 通知房東申請已撤回
-    const listingAccount = await program.account.listing.fetch(applicationAccount.listing);
-    broadcastToUser(listingAccount.owner.toString(), {
-      type: 'application_closed',
-      listing: applicationAccount.listing.toString(),
-      applicant: userPublicKey.toString(),
-      message: '承租人已撤回申請'
+      landlord: req.user!.publicKey,
+      message: '您的租房申請已被拒絕'
     });
 
     res.json({

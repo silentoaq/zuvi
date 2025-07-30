@@ -1,147 +1,231 @@
 import { Router } from 'express';
-import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
-import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token';
-import { program, derivePDAs, USDC_MINT } from '../config/solana';
+import { PublicKey, SystemProgram } from '@solana/web3.js';
+import { program, derivePDAs, apiSignerWallet } from '../config/solana';
+import { CredentialService } from '../services/credential';
 import { StorageService } from '../services/storage';
 import { ApiError } from '../middleware/errorHandler';
-import { AuthRequest } from '../middleware/auth';
-import { BN, ProgramAccount } from '@coral-xyz/anchor';
+import { AuthRequest, requireCitizenCredential } from '../middleware/auth';
 import { broadcastToUser } from '../ws/websocket';
+import { BN } from '@coral-xyz/anchor';
 
 const router = Router();
 
-// 創建租約 (房東用)
-router.post('/create', async (req: AuthRequest, res, next) => {
+router.post('/apply', requireCitizenCredential, async (req: AuthRequest, res, next) => {
   try {
-    const { listing, applicant, startDate, endDate, paymentDay, contract } = req.body;
+    const { listing, message } = req.body;
     const userPublicKey = new PublicKey(req.user!.publicKey);
 
-    // 驗證參數
-    if (!listing || !applicant || !startDate || !endDate || !paymentDay || !contract) {
+    if (!listing || !message) {
       throw new ApiError(400, 'Missing required fields');
     }
 
-    // 驗證日期
-    const now = Math.floor(Date.now() / 1000);
-    if (startDate < now || startDate > now + 30 * 86400) {
-      throw new ApiError(400, 'Start date must be within 30 days');
-    }
-    if (endDate <= startDate) {
-      throw new ApiError(400, 'End date must be after start date');
-    }
-
-    // 驗證繳費日
-    if (paymentDay < 1 || paymentDay > 28) {
-      throw new ApiError(400, 'Payment day must be between 1-28');
-    }
-
     const listingPubkey = new PublicKey(listing);
-    const applicantPubkey = new PublicKey(applicant);
-
-    // 檢查權限
     const listingAccount = await program.account.listing.fetch(listingPubkey);
-    if (!listingAccount.owner.equals(userPublicKey)) {
-      throw new ApiError(403, 'Not the owner of this listing');
+
+    if (listingAccount.status !== 0) {
+      throw new ApiError(400, 'Listing is not available');
     }
 
-    // 上傳合約到 IPFS
-    const ipfsResult = await StorageService.uploadJSON(contract, 'lease', req.user!.publicKey);
+    const status = await CredentialService.getCredentialStatus(req.user!.publicKey);
+    if (!status.twfido?.exists) {
+      throw new ApiError(403, 'Citizen credential required');
+    }
 
-    const [applicationPda] = derivePDAs.application(listingPubkey, applicantPubkey);
-    const [leasePda] = derivePDAs.lease(listingPubkey, applicantPubkey);
+    const createdAt = new BN(Math.floor(Date.now() / 1000));
+    const ipfsResult = await StorageService.uploadJSON(message, 'application', req.user!.publicKey);
+    const messageUriBytes = StorageService.ipfsHashToBytes(ipfsResult.ipfsHash);
+
+    const [applicationPda] = derivePDAs.application(listingPubkey, userPublicKey, createdAt);
 
     const tx = await program.methods
-      .createLease(
-        applicantPubkey,
-        new BN(startDate),
-        new BN(endDate),
-        paymentDay,
-        StorageService.ipfsHashToBytes(ipfsResult.ipfsHash)
+      .applyLease(
+        Array.from(messageUriBytes),
+        createdAt
       )
       .accountsStrict({
+        config: derivePDAs.config()[0],
         listing: listingPubkey,
         application: applicationPda,
-        lease: leasePda,
-        landlord: userPublicKey,
+        applicant: userPublicKey,
+        apiSigner: apiSignerWallet.publicKey,
+        tenantAttest: new PublicKey(status.twfido.address!),
         systemProgram: SystemProgram.programId,
       })
       .transaction();
 
-    // 設置 recentBlockhash
     const { blockhash } = await program.provider.connection.getLatestBlockhash();
     tx.recentBlockhash = blockhash;
     tx.feePayer = userPublicKey;
+    
+    tx.partialSign(apiSignerWallet.payer);
 
     const serialized = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false
     });
 
-    // 通知承租人租約已創建
-    broadcastToUser(applicant, {
-      type: 'lease_created',
+    broadcastToUser(listingAccount.owner.toString(), {
+      type: 'new_application',
       listing: listing,
-      lease: leasePda.toString(),
-      landlord: userPublicKey.toString(),
-      message: '房東已創建租約，請查看並簽署'
+      applicant: req.user!.publicKey,
+      message: '有新的租房申請'
     });
 
     res.json({
       success: true,
       transaction: serialized.toString('base64'),
-      lease: leasePda.toString(),
-      contractIpfsHash: ipfsResult.ipfsHash,
-      contractUrl: ipfsResult.gatewayUrl
+      application: applicationPda.toString(),
+      ipfsHash: ipfsResult.ipfsHash
     });
   } catch (error) {
     next(error);
   }
 });
 
-// 簽署租約 (承租人用)
-router.post('/:lease/sign', async (req: AuthRequest, res, next) => {
+router.get('/listing/:listing', async (req: AuthRequest, res, next) => {
   try {
-    const { lease } = req.params;
+    const { listing } = req.params;
     const userPublicKey = new PublicKey(req.user!.publicKey);
-    const leasePubkey = new PublicKey(lease);
+    const listingPubkey = new PublicKey(listing);
 
-    // 檢查租約
-    const leaseAccount = await program.account.lease.fetch(leasePubkey);
-    if (!leaseAccount.tenant.equals(userPublicKey)) {
-      throw new ApiError(403, 'Not the tenant of this lease');
+    const listingAccount = await program.account.listing.fetch(listingPubkey);
+    if (!listingAccount.owner.equals(userPublicKey)) {
+      throw new ApiError(403, 'Not the owner of this listing');
     }
 
-    const [configPda] = derivePDAs.config();
-    const config = await program.account.config.fetch(configPda);
-    
-    const [escrowPda] = derivePDAs.escrow(leasePubkey);
-    const [escrowTokenPda] = derivePDAs.escrowToken(leasePubkey);
+    const applications = await program.account.application.all([
+      {
+        memcmp: {
+          offset: 8,
+          bytes: listingPubkey.toBase58()
+        }
+      }
+    ]);
 
-    // 獲取 token 帳戶地址
-    const tenantToken = await getAssociatedTokenAddress(USDC_MINT, userPublicKey);
-    const landlordToken = await getAssociatedTokenAddress(USDC_MINT, leaseAccount.landlord);
-    const feeReceiverToken = await getAssociatedTokenAddress(USDC_MINT, config.feeReceiver);
+    const enriched = await Promise.all(
+      applications.map(async (app) => {
+        const ipfsHash = StorageService.bytesToIpfsHash(app.account.messageUri);
+        const message = await StorageService.getJSON(ipfsHash);
+        
+        return {
+          publicKey: app.publicKey.toString(),
+          applicant: app.account.applicant.toString(),
+          tenantAttest: app.account.tenantAttest.toString(),
+          status: app.account.status,
+          createdAt: app.account.createdAt.toNumber(),
+          message,
+          ipfsHash
+        };
+      })
+    );
+
+    res.json({
+      applications: enriched,
+      total: enriched.length
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/my', async (req: AuthRequest, res, next) => {
+  try {
+    const userPublicKey = new PublicKey(req.user!.publicKey);
+
+    const applications = await program.account.application.all([
+      {
+        memcmp: {
+          offset: 8 + 32,
+          bytes: userPublicKey.toBase58()
+        }
+      }
+    ]);
+
+    const enriched = await Promise.all(
+      applications.map(async (app) => {
+        const listing = await program.account.listing.fetch(app.account.listing);
+        const listingIpfsHash = StorageService.bytesToIpfsHash(listing.metadataUri);
+        const listingMetadata = await StorageService.getJSON(listingIpfsHash);
+
+        const appIpfsHash = StorageService.bytesToIpfsHash(app.account.messageUri);
+        const message = await StorageService.getJSON(appIpfsHash);
+
+        return {
+          publicKey: app.publicKey.toString(),
+          listing: {
+            publicKey: app.account.listing.toString(),
+            address: Buffer.from(listing.address).toString('utf8').replace(/\0/g, ''),
+            rent: listing.rent.toString(),
+            deposit: listing.deposit.toString(),
+            metadata: listingMetadata
+          },
+          status: app.account.status,
+          createdAt: app.account.createdAt.toNumber(),
+          message
+        };
+      })
+    );
+
+    res.json({
+      applications: enriched,
+      total: enriched.length
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/:listing/approve/:applicant', async (req: AuthRequest, res, next) => {
+  try {
+    const { listing, applicant } = req.params;
+    const userPublicKey = new PublicKey(req.user!.publicKey);
+
+    const listingPubkey = new PublicKey(listing);
+    const applicantPubkey = new PublicKey(applicant);
+
+    const listingAccount = await program.account.listing.fetch(listingPubkey);
+    if (!listingAccount.owner.equals(userPublicKey)) {
+      throw new ApiError(403, 'Not the owner of this listing');
+    }
+
+    const applications = await program.account.application.all([
+      {
+        memcmp: {
+          offset: 8,
+          bytes: listingPubkey.toBase58()
+        }
+      },
+      {
+        memcmp: {
+          offset: 8 + 32,
+          bytes: applicantPubkey.toBase58()
+        }
+      }
+    ]);
+
+    if (applications.length === 0) {
+      throw new ApiError(404, 'Application not found');
+    }
+
+    const application = applications[0];
+    if (application.account.status !== 0) {
+      throw new ApiError(400, 'Application already processed');
+    }
+
+    const applicationCreatedAt = application.account.createdAt;
 
     const tx = await program.methods
-      .signLease()
+      .approveApplication(
+        applicantPubkey,
+        applicationCreatedAt
+      )
       .accountsStrict({
-        config: configPda,
-        listing: leaseAccount.listing,
-        lease: leasePubkey,
-        escrow: escrowPda,
-        tenant: userPublicKey,
-        tenantToken,
-        landlordToken,
-        feeReceiverToken,
-        escrowToken: escrowTokenPda,
-        usdcMint: USDC_MINT,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        rent: SYSVAR_RENT_PUBKEY,
+        listing: listingPubkey,
+        application: application.publicKey,
+        owner: userPublicKey,
       })
       .transaction();
 
-    // 設置 recentBlockhash
     const { blockhash } = await program.provider.connection.getLatestBlockhash();
     tx.recentBlockhash = blockhash;
     tx.feePayer = userPublicKey;
@@ -151,12 +235,11 @@ router.post('/:lease/sign', async (req: AuthRequest, res, next) => {
       verifySignatures: false
     });
 
-    // 通知房東租約已簽署
-    broadcastToUser(leaseAccount.landlord.toString(), {
-      type: 'lease_signed',
-      lease: lease,
-      tenant: userPublicKey.toString(),
-      message: '承租人已簽署租約並支付押金和首期租金'
+    broadcastToUser(applicant, {
+      type: 'application_approved',
+      listing: listing,
+      landlord: req.user!.publicKey,
+      message: '您的租房申請已被批准'
     });
 
     res.json({
@@ -168,141 +251,80 @@ router.post('/:lease/sign', async (req: AuthRequest, res, next) => {
   }
 });
 
-// 查詢租約詳情
-router.get('/:lease', async (req: AuthRequest, res, next) => {
+router.post('/:listing/reject/:applicant', async (req: AuthRequest, res, next) => {
   try {
-    const { lease } = req.params;
+    const { listing, applicant } = req.params;
     const userPublicKey = new PublicKey(req.user!.publicKey);
-    const leasePubkey = new PublicKey(lease);
 
-    const leaseAccount = await program.account.lease.fetch(leasePubkey);
-    
-    // 檢查權限
-    if (!leaseAccount.landlord.equals(userPublicKey) && 
-        !leaseAccount.tenant.equals(userPublicKey)) {
-      throw new ApiError(403, 'Not authorized to view this lease');
+    const listingPubkey = new PublicKey(listing);
+    const applicantPubkey = new PublicKey(applicant);
+
+    const listingAccount = await program.account.listing.fetch(listingPubkey);
+    if (!listingAccount.owner.equals(userPublicKey)) {
+      throw new ApiError(403, 'Not the owner of this listing');
     }
 
-    // 獲取合約內容
-    const contractIpfsHash = StorageService.bytesToIpfsHash(leaseAccount.contractUri);
-    const contract = await StorageService.getJSON(contractIpfsHash);
-
-    // 獲取房源資訊
-    const listing = await program.account.listing.fetch(leaseAccount.listing);
-    const listingIpfsHash = StorageService.bytesToIpfsHash(listing.metadataUri);
-    const listingMetadata = await StorageService.getJSON(listingIpfsHash);
-
-    // 獲取押金狀態
-    const [escrowPda] = derivePDAs.escrow(leasePubkey);
-    let escrow = null;
-    try {
-      escrow = await program.account.escrow.fetch(escrowPda);
-    } catch {}
-
-    res.json({
-      lease: {
-        publicKey: lease,
-        listing: leaseAccount.listing.toString(),
-        landlord: leaseAccount.landlord.toString(),
-        tenant: leaseAccount.tenant.toString(),
-        tenantAttest: leaseAccount.tenantAttest.toString(),
-        rent: leaseAccount.rent.toString(),
-        deposit: leaseAccount.deposit.toString(),
-        startDate: leaseAccount.startDate.toNumber(),
-        endDate: leaseAccount.endDate.toNumber(),
-        paymentDay: leaseAccount.paymentDay,
-        paidMonths: leaseAccount.paidMonths,
-        lastPayment: leaseAccount.lastPayment.toNumber(),
-        status: leaseAccount.status,
-        landlordSigned: leaseAccount.landlordSigned,
-        tenantSigned: leaseAccount.tenantSigned,
-        contract,
-        contractIpfsHash
-      },
-      listing: {
-        address: Buffer.from(listing.address).toString('utf8').replace(/\0/g, ''),
-        buildingArea: listing.buildingArea,
-        metadata: listingMetadata
-      },
-      escrow: escrow ? {
-        amount: escrow.amount.toString(),
-        status: escrow.status,
-        hasDispute: escrow.hasDispute
-      } : null
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// 查詢用戶的所有租約
-router.get('/', async (req: AuthRequest, res, next) => {
-  try {
-    const userPublicKey = new PublicKey(req.user!.publicKey);
-    const { role } = req.query; // 'landlord' or 'tenant'
-
-    type LeaseAccount = Awaited<ReturnType<typeof program.account.lease.fetch>>;
-    type LeaseWithRole = ProgramAccount<LeaseAccount> & { role: 'landlord' | 'tenant' };
-    let leases: LeaseWithRole[] = [];
-
-    if (role === 'landlord' || !role) {
-      // 查詢作為房東的租約
-      const landlordLeases = await program.account.lease.all([
-        {
-          memcmp: {
-            offset: 8 + 32, // discriminator + listing
-            bytes: userPublicKey.toBase58()
-          }
+    const applications = await program.account.application.all([
+      {
+        memcmp: {
+          offset: 8,
+          bytes: listingPubkey.toBase58()
         }
-      ]);
-      leases = [...leases, ...landlordLeases.map(l => ({ ...l, role: 'landlord' as const }))];
-    }
-
-    if (role === 'tenant' || !role) {
-      // 查詢作為承租人的租約
-      const tenantLeases = await program.account.lease.all([
-        {
-          memcmp: {
-            offset: 8 + 32 + 32, // discriminator + listing + landlord
-            bytes: userPublicKey.toBase58()
-          }
+      },
+      {
+        memcmp: {
+          offset: 8 + 32,
+          bytes: applicantPubkey.toBase58()
         }
-      ]);
-      leases = [...leases, ...tenantLeases.map(l => ({ ...l, role: 'tenant' as const }))];
+      }
+    ]);
+
+    if (applications.length === 0) {
+      throw new ApiError(404, 'Application not found');
     }
 
-    // 加載詳細資訊
-    const enriched = await Promise.all(
-      leases.map(async (lease) => {
-        const listing = await program.account.listing.fetch(lease.account.listing);
-        const listingIpfsHash = StorageService.bytesToIpfsHash(listing.metadataUri);
-        const listingMetadata = await StorageService.getJSON(listingIpfsHash);
+    const application = applications[0];
+    if (application.account.status !== 0) {
+      throw new ApiError(400, 'Application already processed');
+    }
 
-        return {
-          publicKey: lease.publicKey.toString(),
-          role: lease.role,
-          listing: {
-            publicKey: lease.account.listing.toString(),
-            address: Buffer.from(listing.address).toString('utf8').replace(/\0/g, ''),
-            metadata: listingMetadata
-          },
-          rent: lease.account.rent.toString(),
-          deposit: lease.account.deposit.toString(),
-          startDate: lease.account.startDate.toNumber(),
-          endDate: lease.account.endDate.toNumber(),
-          status: lease.account.status,
-          paidMonths: lease.account.paidMonths
-        };
+    const applicationCreatedAt = application.account.createdAt;
+
+    const tx = await program.methods
+      .rejectApplication(
+        applicantPubkey,
+        applicationCreatedAt
+      )
+      .accountsStrict({
+        listing: listingPubkey,
+        application: application.publicKey,
+        owner: userPublicKey,
       })
-    );
+      .transaction();
+
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
+
+    const serialized = tx.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false
+    });
+
+    broadcastToUser(applicant, {
+      type: 'application_rejected',
+      listing: listing,
+      landlord: req.user!.publicKey,
+      message: '您的租房申請已被拒絕'
+    });
 
     res.json({
-      leases: enriched,
-      total: enriched.length
+      success: true,
+      transaction: serialized.toString('base64')
     });
   } catch (error) {
     next(error);
   }
 });
 
-export { router as leaseRouter };
+export { router as applicationRouter };

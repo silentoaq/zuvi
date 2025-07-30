@@ -1,5 +1,5 @@
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
-import { Program, AnchorProvider, Wallet } from '@coral-xyz/anchor';
+import { Program, AnchorProvider, Wallet, BN } from '@coral-xyz/anchor';
 import { Zuvi } from '../types/zuvi';
 import zuvi_idl from '../idl/zuvi.json';
 import bs58 from 'bs58';
@@ -53,10 +53,20 @@ export const derivePDAs = {
     PublicKey.findProgramAddressSync([Buffer.from('config')], PROGRAM_ID),
   listing: (propertyAttest: PublicKey) =>
     PublicKey.findProgramAddressSync([Buffer.from('list'), propertyAttest.toBuffer()], PROGRAM_ID),
-  application: (listing: PublicKey, applicant: PublicKey) =>
-    PublicKey.findProgramAddressSync([Buffer.from('apply'), listing.toBuffer(), applicant.toBuffer()], PROGRAM_ID),
-  lease: (listing: PublicKey, tenant: PublicKey) =>
-    PublicKey.findProgramAddressSync([Buffer.from('lease'), listing.toBuffer(), tenant.toBuffer()], PROGRAM_ID),
+  application: (listing: PublicKey, applicant: PublicKey, createdAt: BN) =>
+    PublicKey.findProgramAddressSync([
+      Buffer.from('apply'), 
+      listing.toBuffer(), 
+      applicant.toBuffer(),
+      createdAt.toBuffer('le', 8)
+    ], PROGRAM_ID),
+  lease: (listing: PublicKey, tenant: PublicKey, startDate: BN) =>
+    PublicKey.findProgramAddressSync([
+      Buffer.from('lease'), 
+      listing.toBuffer(), 
+      tenant.toBuffer(),
+      startDate.toBuffer('le', 8)
+    ], PROGRAM_ID),
   escrow: (lease: PublicKey) =>
     PublicKey.findProgramAddressSync([Buffer.from('escrow'), lease.toBuffer()], PROGRAM_ID),
   escrowToken: (lease: PublicKey) =>

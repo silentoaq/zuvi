@@ -149,6 +149,16 @@ export default function Navbar() {
                     </NavigationMenuContent>
                   </NavigationMenuItem>
 
+                  <NavigationMenuItem>
+                    <Link to="/leases/manage" className={cn(
+                      "px-3 py-2 text-sm font-medium transition-colors hover:text-foreground/80",
+                      isActive('/leases/manage') ? "text-foreground" : "text-foreground/60"
+                    )}>
+                      <FileText className="inline h-4 w-4 mr-2" />
+                      租約管理
+                    </Link>
+                  </NavigationMenuItem>
+
                   {user?.credentialStatus?.twland?.exists && (
                     <NavigationMenuItem>
                       <NavigationMenuTrigger>
@@ -166,11 +176,6 @@ export default function Navbar() {
                             <NavigationMenuLink asChild>
                               <Link to="/listings/manage">
                                 管理房源
-                              </Link>
-                            </NavigationMenuLink>
-                            <NavigationMenuLink asChild>
-                              <Link to="/leases/manage">
-                                租約管理
                               </Link>
                             </NavigationMenuLink>
                           </li>

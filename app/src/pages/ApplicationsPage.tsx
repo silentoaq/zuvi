@@ -4,6 +4,7 @@ import { FileText, MapPin, Calendar, Clock, X, ChevronDown, ChevronUp, User, Bri
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { useAuthStore } from '@/stores/authStore'
 import { useTransaction } from '@/hooks'
@@ -153,6 +154,16 @@ export default function ApplicationsPage() {
     return applications.filter(app => app.status.toString() === status).length
   }
 
+  const getStatusLabel = (status: FilterStatus) => {
+    switch (status) {
+      case 'all': return `全部 (${getStatusCount(status)})`
+      case '0': return `待審核 (${getStatusCount(status)})`
+      case '1': return `已核准 (${getStatusCount(status)})`
+      case '2': return `已拒絕 (${getStatusCount(status)})`
+      default: return '全部'
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -180,22 +191,20 @@ export default function ApplicationsPage() {
         <p className="text-muted-foreground">查看您提交的租賃申請狀態</p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {[
-          { key: 'all' as FilterStatus, label: '全部' },
-          { key: '0' as FilterStatus, label: '待審核' },
-          { key: '1' as FilterStatus, label: '已核准' },
-          { key: '2' as FilterStatus, label: '已拒絕' }
-        ].map(({ key, label }) => (
-          <Button
-            key={key}
-            variant={filterStatus === key ? "default" : "outline"}
-            size="sm"
-            onClick={() => setFilterStatus(key)}
-          >
-            {label} ({getStatusCount(key)})
-          </Button>
-        ))}
+      <div className="flex justify-between items-center">
+        <div className="w-48">
+          <Select value={filterStatus} onValueChange={(value: FilterStatus) => setFilterStatus(value)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{getStatusLabel('all')}</SelectItem>
+              <SelectItem value="0">{getStatusLabel('0')}</SelectItem>
+              <SelectItem value="1">{getStatusLabel('1')}</SelectItem>
+              <SelectItem value="2">{getStatusLabel('2')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="space-y-4">

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { format } from 'date-fns'
 import { Transaction } from '@solana/web3.js'
-import { Calendar as CalendarIcon, FileText, MapPin, Clock, CheckCircle, AlertCircle, Eye } from 'lucide-react'
+import { Calendar as CalendarIcon, FileText, MapPin, Clock, CheckCircle, AlertCircle, Eye, CreditCard, DollarSign } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -75,6 +75,20 @@ interface CreateLeaseFormData {
   specialConditions: string
 }
 
+interface PaymentHistory {
+  lease: string
+  paidMonths: number
+  totalMonths: number
+  remainingMonths: number
+  totalPaid: string
+  totalRent: string
+  paymentDay: number
+  payments: any[]
+  nextPayment?: any
+}
+
+type FilterStatus = 'all' | 'pending' | 'active' | 'completed' | 'terminated'
+
 const PAYMENT_DAYS = Array.from({ length: 28 }, (_, i) => i + 1)
 
 export default function ManageLeasesPage() {
@@ -82,12 +96,16 @@ export default function ManageLeasesPage() {
   
   const [leases, setLeases] = useState<Lease[]>([])
   const [approvedApplications, setApprovedApplications] = useState<ApprovedApplication[]>([])
+  const [paymentHistory, setPaymentHistory] = useState<Record<string, PaymentHistory>>({})
   const [loading, setLoading] = useState(true)
   const [loadingApplications, setLoadingApplications] = useState(false)
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
   const [selectedLease, setSelectedLease] = useState<Lease | null>(null)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [showLeaseDialog, setShowLeaseDialog] = useState(false)
   const [showSignDialog, setShowSignDialog] = useState(false)
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false)
+  const [showPaymentHistoryDialog, setShowPaymentHistoryDialog] = useState(false)
   
   const [formData, setFormData] = useState<CreateLeaseFormData>({
     selectedApplication: null,
@@ -97,6 +115,9 @@ export default function ManageLeasesPage() {
     contractTerms: '',
     specialConditions: ''
   })
+
+  const isLandlord = user?.credentialStatus?.twland?.exists
+  const isTenant = user?.credentialStatus?.twfido?.exists
 
   const {
     executeTransaction: executeCreateLease,
@@ -121,12 +142,26 @@ export default function ManageLeasesPage() {
     }
   })
 
+  const {
+    executeTransaction: executePayRent,
+    isLoading: isPayingRent
+  } = useTransaction({
+    onSuccess: () => {
+      toast.success('租金支付成功')
+      setShowPaymentDialog(false)
+      fetchLeases()
+      if (selectedLease) {
+        fetchPaymentHistory(selectedLease.publicKey)
+      }
+    }
+  })
+
   useEffect(() => {
     fetchLeases()
-    if (user?.credentialStatus?.twland?.exists) {
+    if (isLandlord) {
       fetchApprovedApplications()
     }
-  }, [user])
+  }, [user, isLandlord])
 
   const fetchLeases = async () => {
     try {
@@ -205,6 +240,60 @@ export default function ManageLeasesPage() {
       console.error('Error fetching approved applications:', error)
     } finally {
       setLoadingApplications(false)
+    }
+  }
+
+  const fetchPaymentHistory = async (leaseId: string) => {
+    try {
+      const response = await fetch(`/api/payments/history/${leaseId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setPaymentHistory(prev => ({
+          ...prev,
+          [leaseId]: data
+        }))
+      }
+    } catch (error) {
+      console.error('Error fetching payment history:', error)
+    }
+  }
+
+  const getLeaseCategory = (lease: Lease) => {
+    if (!lease.landlordSigned || !lease.tenantSigned) {
+      return 'pending'
+    }
+    
+    switch (lease.status) {
+      case 0: return 'active'
+      case 1: return 'completed'
+      case 2: return 'terminated'
+      default: return 'active'
+    }
+  }
+
+  const filteredLeases = leases.filter(lease => {
+    if (filterStatus === 'all') return true
+    return getLeaseCategory(lease) === filterStatus
+  })
+
+  const getStatusCount = (status: FilterStatus) => {
+    if (status === 'all') return leases.length
+    return leases.filter(lease => getLeaseCategory(lease) === status).length
+  }
+
+  const getStatusLabel = (status: FilterStatus) => {
+    switch (status) {
+      case 'all': return `全部 (${getStatusCount(status)})`
+      case 'pending': return `待簽署 (${getStatusCount(status)})`
+      case 'active': return `生效中 (${getStatusCount(status)})`
+      case 'completed': return `已完成 (${getStatusCount(status)})`
+      case 'terminated': return `已終止 (${getStatusCount(status)})`
+      default: return '全部'
     }
   }
 
@@ -301,6 +390,31 @@ export default function ManageLeasesPage() {
     }
   }, [executeSignLease])
 
+  const handlePayRent = useCallback(async (lease: Lease) => {
+    try {
+      const response = await fetch(`/api/payments/rent/${lease.publicKey}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to pay rent')
+      }
+
+      const { transaction: serializedTx } = await response.json()
+      const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
+      
+      await executePayRent(tx)
+    } catch (error) {
+      console.error('Error paying rent:', error)
+      toast.error(error instanceof Error ? error.message : '支付租金失敗')
+    }
+  }, [executePayRent])
+
   const resetForm = () => {
     setFormData({
       selectedApplication: null,
@@ -344,7 +458,18 @@ export default function ManageLeasesPage() {
            !lease.tenantSigned
   }
 
-  const isLandlord = user?.credentialStatus?.twland?.exists
+  const canPayRent = (lease: Lease) => {
+    return lease.tenant === user?.publicKey && 
+           lease.landlordSigned && 
+           lease.tenantSigned && 
+           lease.status === 0
+  }
+
+  const getUserRole = (lease: Lease) => {
+    if (lease.landlord === user?.publicKey) return 'landlord'
+    if (lease.tenant === user?.publicKey) return 'tenant'
+    return null
+  }
 
   if (loading) {
     return (
@@ -380,7 +505,7 @@ export default function ManageLeasesPage() {
       </div>
 
       <Tabs defaultValue="leases" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className={`grid w-full ${isLandlord ? 'grid-cols-2' : 'grid-cols-1'}`}>
           <TabsTrigger value="leases">我的租約</TabsTrigger>
           {isLandlord && (
             <TabsTrigger value="create">創建租約</TabsTrigger>
@@ -388,126 +513,186 @@ export default function ManageLeasesPage() {
         </TabsList>
 
         <TabsContent value="leases" className="space-y-4">
-          {leases.length === 0 ? (
+          <div className="flex justify-between items-center">
+            <div className="w-48">
+              <Select value={filterStatus} onValueChange={(value: FilterStatus) => setFilterStatus(value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{getStatusLabel('all')}</SelectItem>
+                  <SelectItem value="pending">{getStatusLabel('pending')}</SelectItem>
+                  <SelectItem value="active">{getStatusLabel('active')}</SelectItem>
+                  <SelectItem value="completed">{getStatusLabel('completed')}</SelectItem>
+                  <SelectItem value="terminated">{getStatusLabel('terminated')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {filteredLeases.length === 0 ? (
             <div className="text-center py-12">
               <FileText className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">還沒有租約</h3>
+              <h3 className="text-lg font-semibold mb-2">
+                {filterStatus === 'all' ? '還沒有租約' : '沒有符合條件的租約'}
+              </h3>
               <p className="text-muted-foreground">
-                {isLandlord ? '創建您的第一個租約' : '等待房東創建租約'}
+                {filterStatus === 'all' ? (
+                  isLandlord && !isTenant ? '創建您的第一個租約' : 
+                  !isLandlord && isTenant ? '等待房東創建租約' :
+                  '創建租約或等待房東創建租約'
+                ) : '請選擇其他篩選條件'}
               </p>
             </div>
           ) : (
             <div className="grid gap-4">
-              {leases.map((lease) => (
-                <Card key={lease.publicKey}>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="flex items-center space-x-2">
-                        <FileText className="h-5 w-5" />
-                        <span>
-                          {lease.listingInfo?.metadata?.basic?.title || '租約'}
-                        </span>
-                      </CardTitle>
-                      <div className="flex items-center space-x-2">
-                        {getLeaseStatusBadge(lease)}
-                        {lease.landlord === user?.publicKey && (
-                          <Badge variant="outline">房東</Badge>
-                        )}
-                        {lease.tenant === user?.publicKey && (
-                          <Badge variant="outline">承租人</Badge>
-                        )}
-                      </div>
-                    </div>
-                  </CardHeader>
-                  
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center text-muted-foreground">
-                      <MapPin className="h-4 w-4 mr-2" />
-                      <span>{lease.listingInfo?.address}</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">月租金</span>
-                        <div className="font-semibold">${formatPrice(lease.rent)} USDC</div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">押金</span>
-                        <div className="font-semibold">${formatPrice(lease.deposit)} USDC</div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">租期</span>
-                        <div>
-                          {formatDate(lease.startDate)} - {formatDate(lease.endDate)}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">繳費日</span>
-                        <div>每月 {lease.paymentDay} 日</div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">已付月數</span>
-                        <div>{lease.paidMonths} 個月</div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">簽署狀態</span>
+              {filteredLeases.map((lease) => {
+                const userRole = getUserRole(lease)
+                return (
+                  <Card key={lease.publicKey}>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="flex items-center space-x-2">
+                          <FileText className="h-5 w-5" />
+                          <span>
+                            {lease.listingInfo?.metadata?.basic?.title || '租約'}
+                          </span>
+                        </CardTitle>
                         <div className="flex items-center space-x-2">
-                          {lease.landlordSigned ? (
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                          ) : (
-                            <Clock className="h-4 w-4 text-yellow-600" />
+                          {getLeaseStatusBadge(lease)}
+                          {userRole === 'landlord' && (
+                            <Badge variant="outline">房東</Badge>
                           )}
-                          <span>房東</span>
-                          <Separator orientation="vertical" className="h-4" />
-                          {lease.tenantSigned ? (
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                          ) : (
-                            <Clock className="h-4 w-4 text-yellow-600" />
+                          {userRole === 'tenant' && (
+                            <Badge variant="outline">承租人</Badge>
                           )}
-                          <span>承租人</span>
                         </div>
                       </div>
-                    </div>
+                    </CardHeader>
+                    
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center text-muted-foreground">
+                        <MapPin className="h-4 w-4 mr-2" />
+                        <span>{lease.listingInfo?.address}</span>
+                      </div>
 
-                    {lease.escrow && (
-                      <div className="bg-muted/50 p-3 rounded-lg">
-                        <div className="text-sm font-medium mb-2">託管狀態</div>
-                        <div className="text-sm text-muted-foreground">
-                          押金已託管：${formatPrice(lease.escrow.amount)} USDC
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">月租金</span>
+                          <div className="font-semibold">${formatPrice(lease.rent)} USDC</div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">押金</span>
+                          <div className="font-semibold">${formatPrice(lease.deposit)} USDC</div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">租期</span>
+                          <div>
+                            {formatDate(lease.startDate)} - {formatDate(lease.endDate)}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">繳費日</span>
+                          <div>每月 {lease.paymentDay} 日</div>
                         </div>
                       </div>
-                    )}
 
-                    <div className="flex justify-between items-center pt-2 border-t">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setSelectedLease(lease)
-                          setShowLeaseDialog(true)
-                        }}
-                      >
-                        <Eye className="h-4 w-4 mr-2" />
-                        查看詳情
-                      </Button>
-                      
-                      {canSignLease(lease) && (
-                        <Button
-                          onClick={() => {
-                            setSelectedLease(lease)
-                            setShowSignDialog(true)
-                          }}
-                          disabled={isSigningLease}
-                        >
-                          {isSigningLease ? '簽署中...' : '簽署租約'}
-                        </Button>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">已付月數</span>
+                          <div>{lease.paidMonths} 個月</div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">簽署狀態</span>
+                          <div className="flex items-center space-x-2">
+                            {lease.landlordSigned ? (
+                              <CheckCircle className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <Clock className="h-4 w-4 text-yellow-600" />
+                            )}
+                            <span>房東</span>
+                            <Separator orientation="vertical" className="h-4" />
+                            {lease.tenantSigned ? (
+                              <CheckCircle className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <Clock className="h-4 w-4 text-yellow-600" />
+                            )}
+                            <span>承租人</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {lease.escrow && (
+                        <div className="bg-muted/50 p-3 rounded-lg">
+                          <div className="text-sm font-medium mb-2">託管狀態</div>
+                          <div className="text-sm text-muted-foreground">
+                            押金已託管：${formatPrice(lease.escrow.amount)} USDC
+                          </div>
+                        </div>
                       )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+
+                      <div className="flex justify-between items-center pt-2 border-t">
+                        <div className="flex space-x-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedLease(lease)
+                              setShowLeaseDialog(true)
+                            }}
+                          >
+                            <Eye className="h-4 w-4 mr-2" />
+                            查看詳情
+                          </Button>
+                          
+                          {userRole === 'tenant' && lease.landlordSigned && lease.tenantSigned && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedLease(lease)
+                                fetchPaymentHistory(lease.publicKey)
+                                setShowPaymentHistoryDialog(true)
+                              }}
+                            >
+                              <DollarSign className="h-4 w-4 mr-2" />
+                              支付記錄
+                            </Button>
+                          )}
+                        </div>
+                        
+                        <div className="flex space-x-2">
+                          {canSignLease(lease) && (
+                            <Button
+                              onClick={() => {
+                                setSelectedLease(lease)
+                                setShowSignDialog(true)
+                              }}
+                              disabled={isSigningLease}
+                              size="sm"
+                            >
+                              {isSigningLease ? '簽署中...' : '簽署租約'}
+                            </Button>
+                          )}
+                          
+                          {canPayRent(lease) && (
+                            <Button
+                              onClick={() => {
+                                setSelectedLease(lease)
+                                setShowPaymentDialog(true)
+                              }}
+                              size="sm"
+                            >
+                              <CreditCard className="h-4 w-4 mr-2" />
+                              支付租金
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
             </div>
           )}
         </TabsContent>
@@ -937,6 +1122,111 @@ export default function ManageLeasesPage() {
               {isSigningLease ? '簽署中...' : '確認簽署'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>支付租金</DialogTitle>
+            <DialogDescription>
+              確認要支付本月租金嗎？
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedLease && (
+            <div className="space-y-4">
+              <div className="bg-muted/50 p-4 rounded-lg space-y-2">
+                <div className="font-medium">支付摘要</div>
+                <div className="text-sm space-y-1">
+                  <div>房源：{selectedLease.listingInfo?.address}</div>
+                  <div>本期租金：${formatPrice(selectedLease.rent)} USDC</div>
+                  <div>第 {selectedLease.paidMonths + 1} 個月租金</div>
+                  <div>繳費日：每月 {selectedLease.paymentDay} 日</div>
+                </div>
+              </div>
+
+              <Alert>
+                <CreditCard className="h-4 w-4" />
+                <AlertDescription>
+                  將從您的帳戶扣除 ${formatPrice(selectedLease.rent)} USDC
+                </AlertDescription>
+              </Alert>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPaymentDialog(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={() => selectedLease && handlePayRent(selectedLease)}
+              disabled={isPayingRent}
+            >
+              {isPayingRent ? '支付中...' : '確認支付'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPaymentHistoryDialog} onOpenChange={setShowPaymentHistoryDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>支付記錄</DialogTitle>
+            <DialogDescription>
+              查看租金支付歷史記錄
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedLease && paymentHistory[selectedLease.publicKey] && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="text-sm text-muted-foreground">已付月數</div>
+                    <div className="text-2xl font-bold">
+                      {paymentHistory[selectedLease.publicKey].paidMonths} / {paymentHistory[selectedLease.publicKey].totalMonths}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="text-sm text-muted-foreground">已付金額</div>
+                    <div className="text-2xl font-bold">
+                      ${formatPrice(paymentHistory[selectedLease.publicKey].totalPaid)} USDC
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {paymentHistory[selectedLease.publicKey].nextPayment && (
+                <Alert>
+                  <Clock className="h-4 w-4" />
+                  <AlertDescription>
+                    下次應付：{paymentHistory[selectedLease.publicKey].nextPayment.monthName} ${formatPrice(paymentHistory[selectedLease.publicKey].nextPayment.amount)} USDC
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                <div className="font-medium">支付記錄</div>
+                {paymentHistory[selectedLease.publicKey].payments.map((payment, index) => (
+                  <div key={index} className="flex justify-between items-center p-2 bg-muted/50 rounded">
+                    <div>
+                      <div className="font-medium">{payment.monthName}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {new Date(payment.date).toLocaleDateString('zh-TW')}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">${formatPrice(payment.amount)} USDC</div>
+                      <Badge variant="outline" className="text-xs">已支付</Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

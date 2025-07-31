@@ -74,7 +74,7 @@ function AppContent() {
             <Route 
               path="/leases/manage" 
               element={
-                <ProtectedRoute requireProperty>
+                <ProtectedRoute requireWallet>
                   <ManageLeasesPage />
                 </ProtectedRoute>
               } 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { format } from 'date-fns'
 import { Transaction } from '@solana/web3.js'
-import { Calendar as CalendarIcon, FileText, MapPin, Clock, CheckCircle, AlertCircle, Eye, CreditCard, DollarSign } from 'lucide-react'
+import { CalendarDays, FileText, MapPin, Clock, CheckCircle, AlertCircle, Eye, CreditCard, DollarSign, Gavel, AlertTriangle, HandCoins, Shield } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Separator } from '@/components/ui/separator'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar as CalendarComponent } from '@/components/ui/calendar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -87,9 +89,25 @@ interface PaymentHistory {
   nextPayment?: any
 }
 
+interface DepositReleaseFormData {
+  landlordAmount: number
+  tenantAmount: number
+  reason: string
+}
+
+interface DisputeFormData {
+  reason: number
+  description: string
+}
+
 type FilterStatus = 'all' | 'pending' | 'active' | 'completed' | 'terminated'
 
 const PAYMENT_DAYS = Array.from({ length: 28 }, (_, i) => i + 1)
+
+const DISPUTE_REASONS = [
+  { value: 0, label: '押金爭議', description: '關於押金分配的爭議' },
+  { value: 1, label: '其他爭議', description: '其他租賃相關爭議' }
+]
 
 export default function ManageLeasesPage() {
   const { user } = useAuthStore()
@@ -106,6 +124,9 @@ export default function ManageLeasesPage() {
   const [showSignDialog, setShowSignDialog] = useState(false)
   const [showPaymentDialog, setShowPaymentDialog] = useState(false)
   const [showPaymentHistoryDialog, setShowPaymentHistoryDialog] = useState(false)
+  const [showDepositReleaseDialog, setShowDepositReleaseDialog] = useState(false)
+  const [showDepositConfirmDialog, setShowDepositConfirmDialog] = useState(false)
+  const [showDisputeDialog, setShowDisputeDialog] = useState(false)
   
   const [formData, setFormData] = useState<CreateLeaseFormData>({
     selectedApplication: null,
@@ -114,6 +135,17 @@ export default function ManageLeasesPage() {
     paymentDay: 5,
     contractTerms: '',
     specialConditions: ''
+  })
+
+  const [depositReleaseData, setDepositReleaseData] = useState<DepositReleaseFormData>({
+    landlordAmount: 0,
+    tenantAmount: 0,
+    reason: ''
+  })
+
+  const [disputeData, setDisputeData] = useState<DisputeFormData>({
+    reason: 0,
+    description: ''
   })
 
   const isLandlord = user?.credentialStatus?.twland?.exists
@@ -153,6 +185,39 @@ export default function ManageLeasesPage() {
       if (selectedLease) {
         fetchPaymentHistory(selectedLease.publicKey)
       }
+    }
+  })
+
+  const {
+    executeTransaction: executeDepositRelease,
+    isLoading: isReleasingDeposit
+  } = useTransaction({
+    onSuccess: () => {
+      toast.success('押金結算發起成功')
+      setShowDepositReleaseDialog(false)
+      fetchLeases()
+    }
+  })
+
+  const {
+    executeTransaction: executeDepositConfirm,
+    isLoading: isConfirmingDeposit
+  } = useTransaction({
+    onSuccess: () => {
+      toast.success('押金結算確認成功')
+      setShowDepositConfirmDialog(false)
+      fetchLeases()
+    }
+  })
+
+  const {
+    executeTransaction: executeDispute,
+    isLoading: isRaisingDispute
+  } = useTransaction({
+    onSuccess: () => {
+      toast.success('爭議發起成功')
+      setShowDisputeDialog(false)
+      fetchLeases()
     }
   })
 
@@ -415,6 +480,98 @@ export default function ManageLeasesPage() {
     }
   }, [executePayRent])
 
+  const handleDepositRelease = useCallback(async () => {
+    if (!selectedLease) return
+
+    if (depositReleaseData.landlordAmount + depositReleaseData.tenantAmount !== parseInt(selectedLease.deposit) / 1_000_000) {
+      toast.error('分配總額必須等於押金總額')
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/payments/deposit/${selectedLease.publicKey}/release`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          landlordAmount: depositReleaseData.landlordAmount * 1_000_000,
+          tenantAmount: depositReleaseData.tenantAmount * 1_000_000
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to initiate deposit release')
+      }
+
+      const { transaction: serializedTx } = await response.json()
+      const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
+      
+      await executeDepositRelease(tx)
+    } catch (error) {
+      console.error('Error releasing deposit:', error)
+      toast.error(error instanceof Error ? error.message : '發起押金結算失敗')
+    }
+  }, [selectedLease, depositReleaseData, executeDepositRelease])
+
+  const handleDepositConfirm = useCallback(async (lease: Lease) => {
+    try {
+      const response = await fetch(`/api/payments/deposit/${lease.publicKey}/confirm`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to confirm deposit release')
+      }
+
+      const { transaction: serializedTx } = await response.json()
+      const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
+      
+      await executeDepositConfirm(tx)
+    } catch (error) {
+      console.error('Error confirming deposit:', error)
+      toast.error(error instanceof Error ? error.message : '確認押金結算失敗')
+    }
+  }, [executeDepositConfirm])
+
+  const handleRaiseDispute = useCallback(async () => {
+    if (!selectedLease) return
+
+    try {
+      const response = await fetch('/api/disputes/raise', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          lease: selectedLease.publicKey,
+          reason: disputeData.reason
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to raise dispute')
+      }
+
+      const { transaction: serializedTx } = await response.json()
+      const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
+      
+      await executeDispute(tx)
+    } catch (error) {
+      console.error('Error raising dispute:', error)
+      toast.error(error instanceof Error ? error.message : '發起爭議失敗')
+    }
+  }, [selectedLease, disputeData, executeDispute])
+
   const resetForm = () => {
     setFormData({
       selectedApplication: null,
@@ -423,6 +580,21 @@ export default function ManageLeasesPage() {
       paymentDay: 5,
       contractTerms: '',
       specialConditions: ''
+    })
+  }
+
+  const resetDepositForm = () => {
+    setDepositReleaseData({
+      landlordAmount: 0,
+      tenantAmount: 0,
+      reason: ''
+    })
+  }
+
+  const resetDisputeForm = () => {
+    setDisputeData({
+      reason: 0,
+      description: ''
     })
   }
 
@@ -465,10 +637,40 @@ export default function ManageLeasesPage() {
            lease.status === 0
   }
 
+  const canInitiateDepositRelease = (lease: Lease) => {
+    return (lease.landlord === user?.publicKey || lease.tenant === user?.publicKey) &&
+           lease.landlordSigned && 
+           lease.tenantSigned && 
+           lease.status === 0 &&
+           (!lease.escrow || lease.escrow.status === 0) &&
+           (!lease.escrow || !lease.escrow.hasDispute)
+  }
+
+  const canConfirmDepositRelease = (lease: Lease) => {
+    return (lease.landlord === user?.publicKey || lease.tenant === user?.publicKey) &&
+           lease.escrow &&
+           lease.escrow.status === 1 &&
+           !lease.escrow.hasDispute &&
+           ((lease.landlord === user?.publicKey && !lease.escrow.landlordSigned) ||
+            (lease.tenant === user?.publicKey && !lease.escrow.tenantSigned))
+  }
+
+  const canRaiseDispute = (lease: Lease) => {
+    return (lease.landlord === user?.publicKey || lease.tenant === user?.publicKey) &&
+           lease.landlordSigned && 
+           lease.tenantSigned && 
+           lease.status === 0 &&
+           (!lease.escrow || !lease.escrow.hasDispute)
+  }
+
   const getUserRole = (lease: Lease) => {
     if (lease.landlord === user?.publicKey) return 'landlord'
     if (lease.tenant === user?.publicKey) return 'tenant'
     return null
+  }
+
+  const isLeaseExpired = (lease: Lease) => {
+    return new Date(lease.endDate * 1000) < new Date()
   }
 
   if (loading) {
@@ -548,8 +750,9 @@ export default function ManageLeasesPage() {
             <div className="grid gap-4">
               {filteredLeases.map((lease) => {
                 const userRole = getUserRole(lease)
+                const expired = isLeaseExpired(lease)
                 return (
-                  <Card key={lease.publicKey}>
+                  <Card key={lease.publicKey} className={expired ? 'border-orange-200' : ''}>
                     <CardHeader>
                       <div className="flex items-center justify-between">
                         <CardTitle className="flex items-center space-x-2">
@@ -559,6 +762,7 @@ export default function ManageLeasesPage() {
                           </span>
                         </CardTitle>
                         <div className="flex items-center space-x-2">
+                          {expired && <Badge variant="destructive">已到期</Badge>}
                           {getLeaseStatusBadge(lease)}
                           {userRole === 'landlord' && (
                             <Badge variant="outline">房東</Badge>
@@ -624,10 +828,56 @@ export default function ManageLeasesPage() {
 
                       {lease.escrow && (
                         <div className="bg-muted/50 p-3 rounded-lg">
-                          <div className="text-sm font-medium mb-2">託管狀態</div>
-                          <div className="text-sm text-muted-foreground">
-                            押金已託管：${formatPrice(lease.escrow.amount)} USDC
+                          <div className="text-sm font-medium mb-2 flex items-center">
+                            <Shield className="h-4 w-4 mr-2" />
+                            託管狀態
                           </div>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <span className="text-muted-foreground">託管金額：</span>
+                              <span>${formatPrice(lease.escrow.amount)} USDC</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">狀態：</span>
+                              <span>
+                                {lease.escrow.status === 0 && '持有中'}
+                                {lease.escrow.status === 1 && '釋放中'}
+                                {lease.escrow.status === 2 && '已釋放'}
+                              </span>
+                            </div>
+                          </div>
+                          {lease.escrow.status === 1 && (
+                            <div className="mt-2 text-sm">
+                              <div>房東分配：${formatPrice(lease.escrow.releaseToLandlord)} USDC</div>
+                              <div>承租人分配：${formatPrice(lease.escrow.releaseToTenant)} USDC</div>
+                              <div className="flex items-center space-x-4 mt-1">
+                                <div className="flex items-center space-x-1">
+                                  {lease.escrow.landlordSigned ? (
+                                    <CheckCircle className="h-3 w-3 text-green-600" />
+                                  ) : (
+                                    <Clock className="h-3 w-3 text-yellow-600" />
+                                  )}
+                                  <span className="text-xs">房東確認</span>
+                                </div>
+                                <div className="flex items-center space-x-1">
+                                  {lease.escrow.tenantSigned ? (
+                                    <CheckCircle className="h-3 w-3 text-green-600" />
+                                  ) : (
+                                    <Clock className="h-3 w-3 text-yellow-600" />
+                                  )}
+                                  <span className="text-xs">承租人確認</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {lease.escrow.hasDispute && (
+                            <Alert className="mt-2">
+                              <AlertTriangle className="h-4 w-4" />
+                              <AlertDescription className="text-xs">
+                                此租約存在爭議，押金釋放暫停
+                              </AlertDescription>
+                            </Alert>
+                          )}
                         </div>
                       )}
 
@@ -685,6 +935,53 @@ export default function ManageLeasesPage() {
                             >
                               <CreditCard className="h-4 w-4 mr-2" />
                               支付租金
+                            </Button>
+                          )}
+
+                          {canInitiateDepositRelease(lease) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedLease(lease)
+                                setDepositReleaseData({
+                                  landlordAmount: parseInt(lease.deposit) / 1_000_000,
+                                  tenantAmount: 0,
+                                  reason: ''
+                                })
+                                setShowDepositReleaseDialog(true)
+                              }}
+                            >
+                              <HandCoins className="h-4 w-4 mr-2" />
+                              押金結算
+                            </Button>
+                          )}
+
+                          {canConfirmDepositRelease(lease) && (
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setSelectedLease(lease)
+                                setShowDepositConfirmDialog(true)
+                              }}
+                            >
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                              確認結算
+                            </Button>
+                          )}
+
+                          {canRaiseDispute(lease) && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedLease(lease)
+                                resetDisputeForm()
+                                setShowDisputeDialog(true)
+                              }}
+                            >
+                              <Gavel className="h-4 w-4 mr-2" />
+                              發起爭議
                             </Button>
                           )}
                         </div>
@@ -812,7 +1109,7 @@ export default function ManageLeasesPage() {
                         !formData.startDate && "text-muted-foreground"
                       )}
                     >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      <CalendarDays className="mr-2 h-4 w-4" />
                       {formData.startDate ? (
                         format(formData.startDate, "yyyy-MM-dd")
                       ) : (
@@ -843,7 +1140,7 @@ export default function ManageLeasesPage() {
                         !formData.endDate && "text-muted-foreground"
                       )}
                     >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      <CalendarDays className="mr-2 h-4 w-4" />
                       {formData.endDate ? (
                         format(formData.endDate, "yyyy-MM-dd")
                       ) : (
@@ -1227,6 +1524,209 @@ export default function ManageLeasesPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDepositReleaseDialog} onOpenChange={(open) => {
+        setShowDepositReleaseDialog(open)
+        if (!open) resetDepositForm()
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>發起押金結算</DialogTitle>
+            <DialogDescription>
+              設定押金分配方案並發起結算
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedLease && (
+            <div className="space-y-4">
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <div className="font-medium mb-2">押金資訊</div>
+                <div className="text-sm">
+                  總押金：${formatPrice(selectedLease.deposit)} USDC
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>房東分配 (USDC)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max={parseInt(selectedLease.deposit) / 1_000_000}
+                    value={depositReleaseData.landlordAmount}
+                    onChange={(e) => {
+                      const landlordAmount = parseFloat(e.target.value) || 0
+                      const totalDeposit = parseInt(selectedLease.deposit) / 1_000_000
+                      setDepositReleaseData(prev => ({
+                        ...prev,
+                        landlordAmount,
+                        tenantAmount: totalDeposit - landlordAmount
+                      }))
+                    }}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>承租人分配 (USDC)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max={parseInt(selectedLease.deposit) / 1_000_000}
+                    value={depositReleaseData.tenantAmount}
+                    onChange={(e) => {
+                      const tenantAmount = parseFloat(e.target.value) || 0
+                      const totalDeposit = parseInt(selectedLease.deposit) / 1_000_000
+                      setDepositReleaseData(prev => ({
+                        ...prev,
+                        tenantAmount,
+                        landlordAmount: totalDeposit - tenantAmount
+                      }))
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>結算說明</Label>
+                <Textarea
+                  value={depositReleaseData.reason}
+                  onChange={(e) => setDepositReleaseData(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="說明押金分配的理由..."
+                  rows={3}
+                />
+              </div>
+
+              <Alert>
+                <HandCoins className="h-4 w-4" />
+                <AlertDescription>
+                  發起後需要對方確認才能完成押金釋放
+                </AlertDescription>
+              </Alert>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDepositReleaseDialog(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={handleDepositRelease}
+              disabled={isReleasingDeposit || 
+                !selectedLease || 
+                depositReleaseData.landlordAmount + depositReleaseData.tenantAmount !== parseInt(selectedLease.deposit) / 1_000_000}
+            >
+              {isReleasingDeposit ? '發起中...' : '發起結算'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDepositConfirmDialog} onOpenChange={setShowDepositConfirmDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>確認押金結算</DialogTitle>
+            <DialogDescription>
+              確認押金分配方案並完成結算
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedLease && selectedLease.escrow && (
+            <div className="space-y-4">
+              <div className="bg-muted/50 p-4 rounded-lg space-y-2">
+                <div className="font-medium">分配方案</div>
+                <div className="text-sm">
+                  <div>房東獲得：${formatPrice(selectedLease.escrow.releaseToLandlord)} USDC</div>
+                  <div>承租人獲得：${formatPrice(selectedLease.escrow.releaseToTenant)} USDC</div>
+                </div>
+              </div>
+
+              <Alert>
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription>
+                  確認後押金將立即釋放到各自帳戶
+                </AlertDescription>
+              </Alert>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDepositConfirmDialog(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={() => selectedLease && handleDepositConfirm(selectedLease)}
+              disabled={isConfirmingDeposit}
+            >
+              {isConfirmingDeposit ? '確認中...' : '確認結算'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDisputeDialog} onOpenChange={(open) => {
+        setShowDisputeDialog(open)
+        if (!open) resetDisputeForm()
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>發起爭議</DialogTitle>
+            <DialogDescription>
+              對租約相關事項發起爭議處理
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <Label>爭議類型</Label>
+              <RadioGroup
+                value={disputeData.reason.toString()}
+                onValueChange={(value) => setDisputeData(prev => ({ ...prev, reason: parseInt(value) }))}
+              >
+                {DISPUTE_REASONS.map((reason) => (
+                  <div key={reason.value} className="flex items-center space-x-2">
+                    <RadioGroupItem value={reason.value.toString()} id={`reason-${reason.value}`} />
+                    <Label htmlFor={`reason-${reason.value}`} className="cursor-pointer">
+                      <div>
+                        <div className="font-medium">{reason.label}</div>
+                        <div className="text-sm text-muted-foreground">{reason.description}</div>
+                      </div>
+                    </Label>
+                  </div>
+                ))}
+              </RadioGroup>
+            </div>
+
+            <div className="space-y-2">
+              <Label>爭議說明</Label>
+              <Textarea
+                value={disputeData.description}
+                onChange={(e) => setDisputeData(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="詳細說明爭議內容..."
+                rows={4}
+              />
+            </div>
+
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                發起爭議後將暫停相關操作，由仲裁者處理
+              </AlertDescription>
+            </Alert>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDisputeDialog(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={handleRaiseDispute}
+              disabled={isRaisingDispute}
+              variant="destructive"
+            >
+              {isRaisingDispute ? '發起中...' : '發起爭議'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

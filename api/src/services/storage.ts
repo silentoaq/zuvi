@@ -30,12 +30,15 @@ export class StorageService {
       
       const result = await getPinata().upload.file(file);
       
+      console.log(`[StorageService] Uploaded JSON - Hash: ${result.IpfsHash}, Type: ${type}, Owner: ${shortOwner}`);
+      
       return {
         ipfsHash: result.IpfsHash,
         pinSize: result.PinSize,
         gatewayUrl: `${process.env.PINATA_GATEWAY}/ipfs/${result.IpfsHash}`
       };
     } catch (error) {
+      console.error('[StorageService] Upload JSON error:', error);
       throw new Error(`Failed to upload to IPFS: ${error}`);
     }
   }
@@ -58,6 +61,7 @@ export class StorageService {
       cache.set(cacheKey, data, 7200); // 緩存2小時
       return data;
     } catch (error) {
+      console.error(`[StorageService] Get JSON error for hash ${ipfsHash}:`, error);
       throw new Error(`Failed to get from IPFS: ${error}`);
     }
   }
@@ -70,12 +74,15 @@ export class StorageService {
       
       const result = await getPinata().upload.file(fileToUpload);
       
+      console.log(`[StorageService] Uploaded file - Hash: ${result.IpfsHash}, Filename: ${filename}`);
+      
       return {
         ipfsHash: result.IpfsHash,
         pinSize: result.PinSize,
         gatewayUrl: `${process.env.PINATA_GATEWAY}/ipfs/${result.IpfsHash}`
       };
     } catch (error) {
+      console.error('[StorageService] Upload file error:', error);
       throw new Error(`Failed to upload file to IPFS: ${error}`);
     }
   }
@@ -83,11 +90,36 @@ export class StorageService {
   // 刪除 IPFS 上的內容
   static async unpin(ipfsHash: string) {
     try {
+      console.log(`[StorageService] Attempting to unpin: ${ipfsHash}`);
+      
+      // 先檢查是否為有效的 IPFS hash
+      if (!ipfsHash || ipfsHash.length < 46) {
+        console.error(`[StorageService] Invalid IPFS hash: ${ipfsHash}`);
+        throw new Error(`Invalid IPFS hash: ${ipfsHash}`);
+      }
+
+      // 執行 unpin
       await getPinata().unpin([ipfsHash]);
       cache.del(`ipfs:${ipfsHash}`);
-      return true;
-    } catch (error) {
-      return false;
+      
+      console.log(`[StorageService] Successfully unpinned: ${ipfsHash}`);
+      return { success: true };
+      
+    } catch (error: any) {
+      console.error(`[StorageService] Unpin failed for ${ipfsHash}:`, {
+        error: error.message,
+        stack: error.stack,
+        response: error.response?.data
+      });
+      
+      // 分析錯誤類型
+      if (error.response?.status === 404) {
+        return { success: false, reason: 'not_found' };
+      } else if (error.response?.status === 401) {
+        return { success: false, reason: 'unauthorized' };
+      } else {
+        return { success: false, reason: error.message };
+      }
     }
   }
 

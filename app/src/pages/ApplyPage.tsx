@@ -891,8 +891,11 @@ export default function ApplyPage() {
             <Button variant="outline" onClick={() => handleStepBack('preview')}>
               返回編輯
             </Button>
-            <Button onClick={handleSubmitApplication} size="lg">
-              確認提交申請
+            <Button
+              onClick={handleSubmitApplication}
+              disabled={submitTransaction.isLoading}
+            >
+              {submitTransaction.isLoading ? '提交中...' : '提交申請'}
             </Button>
           </div>
         </div>

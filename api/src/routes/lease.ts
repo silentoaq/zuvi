@@ -2,15 +2,15 @@ import { Router } from 'express';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token';
 import { program, derivePDAs, USDC_MINT } from '../config/solana';
-import { StorageService } from '../services/storage';
 import { ApiError } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
+import { StorageService } from '../services/storage';
 import { BN } from '@coral-xyz/anchor';
 import { broadcastToUser } from '../ws/websocket';
 
 const router = Router();
 
-// 創建租約
+// 創建租約 (房東)
 router.post('/create', async (req: AuthRequest, res, next) => {
   try {
     const { listing, applicant, startDate, endDate, paymentDay, contract } = req.body;
@@ -23,13 +23,18 @@ router.post('/create', async (req: AuthRequest, res, next) => {
     const listingPubkey = new PublicKey(listing);
     const applicantPubkey = new PublicKey(applicant);
 
-    // 檢查房源擁有權
+    // 檢查房源所有權
     const listingAccount = await program.account.listing.fetch(listingPubkey);
     if (!listingAccount.owner.equals(userPublicKey)) {
       throw new ApiError(403, 'Not the owner of this listing');
     }
 
-    // 檢查申請是否已核准
+    // 檢查房源狀態
+    if (listingAccount.status !== 0) {
+      throw new ApiError(400, 'Listing is not available');
+    }
+
+    // 找到對應的申請
     const applications = await program.account.application.all([
       {
         memcmp: {
@@ -45,22 +50,20 @@ router.post('/create', async (req: AuthRequest, res, next) => {
       }
     ]);
 
-    if (applications.length === 0) {
-      throw new ApiError(404, 'Application not found');
+    const approvedApp = applications.find(app => app.account.status === 1);
+    if (!approvedApp) {
+      throw new ApiError(404, 'No approved application found');
     }
 
-    const application = applications[0];
-    if (application.account.status !== 1) {
-      throw new ApiError(400, 'Application not approved');
-    }
-
-    const startDateBN = new BN(startDate);
-    const endDateBN = new BN(endDate);
+    const application = approvedApp;
     const applicationCreatedAt = application.account.createdAt;
 
     // 上傳合約到 IPFS
     const ipfsResult = await StorageService.uploadJSON(contract, 'lease', req.user!.publicKey);
     const contractUriBytes = StorageService.ipfsHashToBytes(ipfsResult.ipfsHash);
+
+    const startDateBN = new BN(startDate);
+    const endDateBN = new BN(endDate);
 
     const [leasePda] = derivePDAs.lease(listingPubkey, applicantPubkey, startDateBN);
 
@@ -104,7 +107,9 @@ router.post('/create', async (req: AuthRequest, res, next) => {
       success: true,
       transaction: serialized.toString('base64'),
       lease: leasePda.toString(),
-      ipfsHash: ipfsResult.ipfsHash
+      cleanup: {
+        contractIpfsHash: ipfsResult.ipfsHash
+      }
     });
   } catch (error) {
     next(error);
@@ -266,12 +271,12 @@ router.get('/:lease', async (req: AuthRequest, res, next) => {
   }
 });
 
-// 查詢用戶的租約列表
+// 查詢所有租約
 router.get('/', async (req: AuthRequest, res, next) => {
   try {
     const userPublicKey = new PublicKey(req.user!.publicKey);
 
-    // 查詢作為房東的租約
+    // 獲取作為房東的租約
     const landlordLeases = await program.account.lease.all([
       {
         memcmp: {
@@ -280,8 +285,8 @@ router.get('/', async (req: AuthRequest, res, next) => {
         }
       }
     ]);
-    
-    // 查詢作為承租人的租約
+
+    // 獲取作為承租人的租約
     const tenantLeases = await program.account.lease.all([
       {
         memcmp: {
@@ -290,19 +295,28 @@ router.get('/', async (req: AuthRequest, res, next) => {
         }
       }
     ]);
-    
-    const leases = [...landlordLeases, ...tenantLeases];
 
+    // 合併並去重
+    const allLeases = [...landlordLeases, ...tenantLeases];
+    const uniqueLeases = Array.from(
+      new Map(allLeases.map(lease => [lease.publicKey.toString(), lease])).values()
+    );
+
+    // 加載詳細資訊
     const enriched = await Promise.all(
-      leases.map(async (lease) => {
+      uniqueLeases.map(async (lease) => {
         try {
           const listing = await program.account.listing.fetch(lease.account.listing);
-          let listingMetadata = null;
+          const listingIpfsHash = StorageService.bytesToIpfsHash(listing.metadataUri);
+          const listingMetadata = await StorageService.getJSON(listingIpfsHash);
+
+          // 檢查託管狀態
+          let escrow = null;
           try {
-            const metadataHash = StorageService.bytesToIpfsHash(listing.metadataUri);
-            listingMetadata = await StorageService.getJSON(metadataHash);
+            const [escrowPda] = derivePDAs.escrow(lease.publicKey);
+            escrow = await program.account.escrow.fetch(escrowPda);
           } catch (error) {
-            console.error('Error loading listing metadata:', error);
+            // 託管帳戶可能尚未創建
           }
 
           return {
@@ -323,7 +337,16 @@ router.get('/', async (req: AuthRequest, res, next) => {
               address: Buffer.from(listing.address).toString('utf8').replace(/\0/g, ''),
               buildingArea: listing.buildingArea,
               metadata: listingMetadata
-            }
+            },
+            escrow: escrow ? {
+              amount: escrow.amount.toString(),
+              status: escrow.status,
+              releaseToLandlord: escrow.releaseToLandlord.toString(),
+              releaseToTenant: escrow.releaseToTenant.toString(),
+              landlordSigned: escrow.landlordSigned,
+              tenantSigned: escrow.tenantSigned,
+              hasDispute: escrow.hasDispute
+            } : null
           };
         } catch (error) {
           console.error('Error processing lease:', error);

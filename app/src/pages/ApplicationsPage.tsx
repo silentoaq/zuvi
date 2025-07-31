@@ -90,7 +90,7 @@ export default function ApplicationsPage() {
   const handleCancelApplication = useCallback(async (applicationId: string) => {
     try {
       setCancellingId(applicationId)
-      
+
       const response = await fetch(`/api/applications/${applicationId}`, {
         method: 'DELETE',
         headers: {
@@ -105,15 +105,15 @@ export default function ApplicationsPage() {
 
       const { transaction: serializedTx, cleanup } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
-      
+
       if (cleanup?.messageIpfsHash) {
         cancelTransaction.updateCleanupInfo({
           ipfsHashes: [cleanup.messageIpfsHash]
         })
       }
-      
+
       await cancelTransaction.executeTransaction(tx)
-      
+
       if (cleanup?.messageIpfsHash) {
         try {
           await fetch('/api/cleanup/transaction-failed', {
@@ -130,7 +130,7 @@ export default function ApplicationsPage() {
           console.error('Cleanup succeeded after transaction:', cleanupError)
         }
       }
-      
+
     } catch (error) {
       console.error('Error cancelling application:', error)
       toast.error(error instanceof Error ? error.message : '撤回申請失敗')
@@ -234,8 +234,8 @@ export default function ApplicationsPage() {
           </div>
         ) : (
           filteredApplications.map((application) => (
-            <ApplicationCard 
-              key={application.publicKey} 
+            <ApplicationCard
+              key={application.publicKey}
               application={application}
               isExpanded={expandedCards.has(application.publicKey)}
               onToggleExpanded={() => toggleExpanded(application.publicKey)}
@@ -249,13 +249,13 @@ export default function ApplicationsPage() {
   )
 }
 
-function ApplicationCard({ 
-  application, 
+function ApplicationCard({
+  application,
   isExpanded,
   onToggleExpanded,
   onCancel,
-  isCancelling 
-}: { 
+  isCancelling
+}: {
   application: Application
   isExpanded: boolean
   onToggleExpanded: () => void
@@ -305,7 +305,7 @@ function ApplicationCard({
           </div>
         </div>
       </CardHeader>
-      
+
       <CardContent className="space-y-4">
         <div className="flex items-center text-muted-foreground">
           <MapPin className="h-4 w-4 mr-2" />
@@ -398,12 +398,12 @@ function ApplicationCard({
               查看房源
             </Link>
           </Button>
-          
+
           {application.status === 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   disabled={isCancelling}
                 >
@@ -429,7 +429,10 @@ function ApplicationCard({
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>取消</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => onCancel(application.publicKey)}>
+                  <AlertDialogAction
+                    onClick={() => onCancel(application.publicKey)}
+                    disabled={isCancelling} 
+                  >
                     確認撤回
                   </AlertDialogAction>
                 </AlertDialogFooter>

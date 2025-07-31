@@ -20,6 +20,7 @@ import { paymentRouter } from './routes/payment';
 import { disputeRouter } from './routes/dispute';
 import { disclosureRouter } from './routes/disclosure';
 import { cleanupRouter } from './routes/cleanup';
+import { testRouter } from './routes/test';
 import { setupWebSocket } from './ws/websocket';
 import { errorHandler } from './middleware/errorHandler';
 import { authenticateToken } from './middleware/auth';
@@ -49,6 +50,7 @@ app.use('/api/payments', authenticateToken, paymentRouter);
 app.use('/api/disputes', authenticateToken, disputeRouter);
 app.use('/api/disclosure', authenticateToken, disclosureRouter);
 app.use('/api/cleanup', authenticateToken, cleanupRouter);
+app.use('/api/test', authenticateToken, testRouter);
 
 setupWebSocket(wss);
 

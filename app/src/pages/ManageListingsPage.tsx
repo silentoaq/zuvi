@@ -622,14 +622,12 @@ export default function ManageListingsPage() {
                   </Button>
 
                   <Button
-                    variant="outline"
-                    size="sm"
                     onClick={() => toggleListingStatus(listing)}
-                    disabled={listing.status === 1 || isToggling}
+                    disabled={isToggling}
                   >
-                    {isToggling ? '處理中...' : listing.status === 0 ? '下架' : '上架'}
+                    {isToggling ? '處理中...' : (listing.status === 0 ? '下架' : '上架')}
                   </Button>
-
+                  
                   <Button
                     variant="outline"
                     size="sm"
@@ -1093,9 +1091,9 @@ export default function ManageListingsPage() {
             </Button>
             <Button
               onClick={handleUpdate}
-              disabled={!editFormData}
+              disabled={!editFormData || updateTransaction.isLoading}
             >
-              確認更新
+              {updateTransaction.isLoading ? '更新中...' : '確認更新'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -11,6 +11,15 @@ export type TransactionStep =
   | 'confirmed'
   | 'error'
 
+interface CleanupInfo {
+  ipfsHashes?: string[]
+  imageIds?: string[]
+  metadataHash?: string
+  messageIpfsHash?: string
+  oldMetadataHash?: string
+  removedImageHashes?: string[]
+}
+
 interface UseTransactionOptions {
   onSuccess?: (signature: string) => void
   onError?: (error: Error) => void
@@ -18,6 +27,7 @@ interface UseTransactionOptions {
   maxRetries?: number
   skipPreflight?: boolean
   commitment?: 'processed' | 'confirmed' | 'finalized'
+  cleanupInfo?: CleanupInfo
 }
 
 interface TransactionState {
@@ -25,6 +35,40 @@ interface TransactionState {
   error: string | null
   signature: string | null
   step: TransactionStep | null
+}
+
+const callCleanupAPI = async (cleanupInfo: CleanupInfo) => {
+  try {
+    const token = localStorage.getItem('zuvi-auth-token')
+    if (!token) return
+
+    const ipfsHashes: string[] = []
+    const imageIds: string[] = []
+
+    if (cleanupInfo.ipfsHashes) ipfsHashes.push(...cleanupInfo.ipfsHashes)
+    if (cleanupInfo.metadataHash) ipfsHashes.push(cleanupInfo.metadataHash)
+    if (cleanupInfo.messageIpfsHash) ipfsHashes.push(cleanupInfo.messageIpfsHash)
+    if (cleanupInfo.oldMetadataHash) ipfsHashes.push(cleanupInfo.oldMetadataHash)
+    if (cleanupInfo.removedImageHashes) ipfsHashes.push(...cleanupInfo.removedImageHashes)
+    
+    if (cleanupInfo.imageIds) imageIds.push(...cleanupInfo.imageIds)
+
+    if (ipfsHashes.length === 0 && imageIds.length === 0) return
+
+    await fetch('/api/cleanup/transaction-failed', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        ipfsHashes: ipfsHashes.length > 0 ? ipfsHashes : undefined,
+        imageIds: imageIds.length > 0 ? imageIds : undefined
+      })
+    })
+  } catch (error) {
+    console.error('Cleanup API call failed:', error)
+  }
 }
 
 export const useTransaction = (options: UseTransactionOptions = {}) => {
@@ -42,12 +86,13 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
   const processedTransactionsRef = useRef<Set<string>>(new Set())
 
   const {
-    onSuccess,
-    onError,
+    onSuccess: originalOnSuccess,
+    onError: originalOnError,
     onStepChange,
     maxRetries = 2,
     skipPreflight = false,
-    commitment = 'confirmed'
+    commitment = 'confirmed',
+    cleanupInfo
   } = options
 
   const updateStep = useCallback((step: TransactionStep) => {
@@ -245,7 +290,7 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
         step: 'confirmed'
       })
 
-      onSuccess?.(signature)
+      originalOnSuccess?.(signature)
       return signature
 
     } catch (error: any) {
@@ -258,7 +303,7 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
           signature: lastTransactionRef.current,
           step: 'confirmed'
         })
-        onSuccess?.(lastTransactionRef.current)
+        originalOnSuccess?.(lastTransactionRef.current)
         return lastTransactionRef.current
       }
       
@@ -273,7 +318,12 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
       
       if (!errorMessage.includes('cancelled') && !errorMessage.includes('already in progress')) {
         toast.error(errorMessage)
-        onError?.(error)
+        
+        if (cleanupInfo) {
+          await callCleanupAPI(cleanupInfo)
+        }
+        
+        originalOnError?.(error)
       }
       
       throw error
@@ -282,7 +332,7 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
       isProcessingRef.current = false
       abortControllerRef.current = null
     }
-  }, [signTransaction, publicKey, sendTransactionWithRetry, onSuccess, onError])
+  }, [signTransaction, publicKey, sendTransactionWithRetry, originalOnSuccess, originalOnError, cleanupInfo])
 
   const reset = useCallback(() => {
     if (abortControllerRef.current && !abortControllerRef.current.signal.aborted) {

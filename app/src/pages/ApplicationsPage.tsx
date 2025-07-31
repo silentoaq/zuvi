@@ -52,20 +52,6 @@ export default function ApplicationsPage() {
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
 
-  const {
-    executeTransaction,
-    isLoading: isCancelling
-  } = useTransaction({
-    onSuccess: () => {
-      toast.success('申請已成功撤回')
-      fetchApplications()
-      setCancellingId(null)
-    },
-    onError: () => {
-      setCancellingId(null)
-    }
-  })
-
   useEffect(() => {
     fetchApplications()
   }, [])
@@ -105,8 +91,39 @@ export default function ApplicationsPage() {
         throw new Error(error.error || 'Failed to cancel application')
       }
 
-      const { transaction: serializedTx } = await response.json()
+      const { transaction: serializedTx, cleanup } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
+      
+      const { executeTransaction } = useTransaction({
+        onSuccess: async () => {
+          toast.success('申請已成功撤回')
+          fetchApplications()
+          setCancellingId(null)
+          
+          if (cleanup?.messageIpfsHash) {
+            try {
+              await fetch('/api/cleanup/transaction-failed', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  ipfsHashes: [cleanup.messageIpfsHash]
+                })
+              })
+            } catch (cleanupError) {
+              console.error('Cleanup failed:', cleanupError)
+            }
+          }
+        },
+        onError: () => {
+          setCancellingId(null)
+        },
+        cleanupInfo: cleanup ? {
+          messageIpfsHash: cleanup.messageIpfsHash
+        } : undefined
+      })
       
       await executeTransaction(tx)
     } catch (error) {
@@ -114,7 +131,7 @@ export default function ApplicationsPage() {
       toast.error(error instanceof Error ? error.message : '撤回申請失敗')
       setCancellingId(null)
     }
-  }, [executeTransaction])
+  }, [])
 
   const toggleExpanded = (applicationId: string) => {
     const newExpanded = new Set(expandedCards)
@@ -210,7 +227,7 @@ export default function ApplicationsPage() {
               isExpanded={expandedCards.has(application.publicKey)}
               onToggleExpanded={() => toggleExpanded(application.publicKey)}
               onCancel={handleCancelApplication}
-              isCancelling={cancellingId === application.publicKey && isCancelling}
+              isCancelling={cancellingId === application.publicKey}
             />
           ))
         )}

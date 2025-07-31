@@ -88,18 +88,6 @@ const BILLING_OPTIONS = [
 export default function CreateListingPage() {
   const { user } = useAuthStore()
   
-  const {
-    executeTransaction,
-    isLoading: publishing
-  } = useTransaction({
-    onSuccess: () => {
-      toast.success('房源發布成功！')
-      setTimeout(() => {
-        window.location.href = '/'
-      }, 2000)
-    }
-  })
-  
   const [selectedCredential, setSelectedCredential] = useState<PropertyCredential | null>(null)
   const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set())
   const [disclosureStep, setDisclosureStep] = useState<'select' | 'waiting' | 'completed' | 'form' | 'publish'>('select')
@@ -533,8 +521,25 @@ export default function CreateListingPage() {
         throw new Error(error.error || 'Failed to create listing')
       }
 
-      const { transaction: serializedTx } = await response.json()
+      const { transaction: serializedTx, cleanup } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
+      
+      const { executeTransaction } = useTransaction({
+        onSuccess: () => {
+          toast.success('房源發布成功！')
+          setTimeout(() => {
+            window.location.href = '/'
+          }, 2000)
+        },
+        onError: async () => {
+          await clearAllTempImages()
+          setFormData(prev => ({ ...prev, uploadedImages: [] }))
+        },
+        cleanupInfo: cleanup ? {
+          metadataHash: cleanup.metadataHash,
+          imageIds: cleanup.imageHashes
+        } : undefined
+      })
       
       await executeTransaction(tx)
 
@@ -544,7 +549,7 @@ export default function CreateListingPage() {
       setFormData(prev => ({ ...prev, uploadedImages: [] }))
       toast.error(error instanceof Error ? error.message : '發布失敗，請稍後再試')
     }
-  }, [selectedCredential, disclosureStatus, formData, executeTransaction])
+  }, [selectedCredential, disclosureStatus, formData])
 
   const getHouseTypeLabel = (value: string) => {
     return HOUSE_TYPES.find(t => t.value === value)?.label || value
@@ -1374,8 +1379,8 @@ export default function CreateListingPage() {
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button size="lg" disabled={publishing}>
-                  {publishing ? '發布中...' : '確認發布'}
+                <Button size="lg">
+                  確認發布
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -1387,8 +1392,8 @@ export default function CreateListingPage() {
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>取消</AlertDialogCancel>
-                  <AlertDialogAction onClick={handlePublish} disabled={publishing}>
-                    {publishing ? '發布中...' : '確認發布'}
+                  <AlertDialogAction onClick={handlePublish}>
+                    確認發布
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

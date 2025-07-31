@@ -109,24 +109,20 @@ const BILLING_OPTIONS = [
 export default function ManageListingsPage() {
   const { user } = useAuthStore()
   
+  const [listings, setListings] = useState<Listing[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editingListing, setEditingListing] = useState<Listing | null>(null)
+  const [editFormData, setEditFormData] = useState<EditFormData | null>(null)
+  const [applications, setApplications] = useState<Record<string, Application[]>>({})
+  const [uploading, setUploading] = useState(false)
+  const [currentViewingListing, setCurrentViewingListing] = useState<string | null>(null)
+
   const {
     executeTransaction: executeToggle,
     isLoading: isToggling
   } = useTransaction({
     onSuccess: () => {
       toast.success('房源狀態更新成功')
-      fetchMyListings()
-    }
-  })
-
-  const {
-    executeTransaction: executeUpdate,
-    isLoading: isUpdating
-  } = useTransaction({
-    onSuccess: () => {
-      toast.success('房源更新成功')
-      setEditingListing(null)
-      setEditFormData(null)
       fetchMyListings()
     }
   })
@@ -140,14 +136,6 @@ export default function ManageListingsPage() {
       fetchApplications(currentViewingListing!)
     }
   })
-  
-  const [listings, setListings] = useState<Listing[]>([])
-  const [loading, setLoading] = useState(true)
-  const [editingListing, setEditingListing] = useState<Listing | null>(null)
-  const [editFormData, setEditFormData] = useState<EditFormData | null>(null)
-  const [applications, setApplications] = useState<Record<string, Application[]>>({})
-  const [uploading, setUploading] = useState(false)
-  const [currentViewingListing, setCurrentViewingListing] = useState<string | null>(null)
 
   useEffect(() => {
     if (user?.publicKey) {
@@ -426,16 +414,50 @@ export default function ManageListingsPage() {
         throw new Error(error.error || 'Failed to update listing')
       }
 
-      const { transaction: serializedTx } = await response.json()
+      const { transaction: serializedTx, cleanup } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
       
-      await executeUpdate(tx)
+      const { executeTransaction } = useTransaction({
+        onSuccess: async () => {
+          toast.success('房源更新成功')
+          setEditingListing(null)
+          setEditFormData(null)
+          fetchMyListings()
+          
+          if (cleanup && (cleanup.oldMetadataHash || cleanup.removedImageHashes?.length)) {
+            try {
+              const ipfsHashes = []
+              if (cleanup.oldMetadataHash) ipfsHashes.push(cleanup.oldMetadataHash)
+              if (cleanup.removedImageHashes?.length) ipfsHashes.push(...cleanup.removedImageHashes)
+              
+              await fetch('/api/cleanup/transaction-failed', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  ipfsHashes: ipfsHashes.length > 0 ? ipfsHashes : undefined
+                })
+              })
+            } catch (cleanupError) {
+              console.error('Cleanup failed:', cleanupError)
+            }
+          }
+        },
+        cleanupInfo: cleanup ? {
+          oldMetadataHash: cleanup.oldMetadataHash,
+          removedImageHashes: cleanup.removedImageHashes
+        } : undefined
+      })
+      
+      await executeTransaction(tx)
 
     } catch (error) {
       console.error('Error updating listing:', error)
       toast.error(error instanceof Error ? error.message : '更新失敗')
     }
-  }, [editFormData, editingListing, executeUpdate])
+  }, [editFormData, editingListing])
 
   const formatPrice = (price: string) => {
     const num = parseInt(price) / 1_000_000
@@ -1064,9 +1086,9 @@ export default function ManageListingsPage() {
             </Button>
             <Button
               onClick={handleUpdate}
-              disabled={isUpdating || !editFormData}
+              disabled={!editFormData}
             >
-              {isUpdating ? '更新中...' : '確認更新'}
+              確認更新
             </Button>
           </DialogFooter>
         </DialogContent>

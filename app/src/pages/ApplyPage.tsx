@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
-import { Copy, CheckCircle, Clock, User, Building, MessageSquare, CalendarIcon } from 'lucide-react'
+import { Copy, CheckCircle, Clock, User, Building, MessageSquare, CalendarIcon, Eye, EyeOff } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -90,22 +90,11 @@ export default function ApplyPage() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
   
-  const {
-    executeTransaction,
-    isLoading: submitting
-  } = useTransaction({
-    onSuccess: () => {
-      toast.success('申請提交成功！')
-      setTimeout(() => {
-        navigate('/applications')
-      }, 2000)
-    }
-  })
-
   const [listing, setListing] = useState<Listing | null>(null)
   const [loading, setLoading] = useState(true)
   const [step, setStep] = useState<'select' | 'waiting' | 'completed' | 'form' | 'preview' | 'submit'>('select')
   const [selectedCredential, setSelectedCredential] = useState<CitizenCredential | null>(null)
+  const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set())
   const [vpRequestUri, setVpRequestUri] = useState<string>('')
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('')
   const [disclosureStatus, setDisclosureStatus] = useState<DisclosureStatus | null>(null)
@@ -158,10 +147,31 @@ export default function ApplyPage() {
     }
   }
 
+  const toggleExpanded = (key: string) => {
+    const newExpanded = new Set(expandedFields)
+    if (newExpanded.has(key)) {
+      newExpanded.delete(key)
+    } else {
+      newExpanded.add(key)
+    }
+    setExpandedFields(newExpanded)
+  }
+
+  const formatDisplayText = (text: string, key: string) => {
+    const isExpanded = expandedFields.has(key)
+    if (isExpanded) {
+      return text
+    }
+    return `${text.slice(0, 8)}...${text.slice(-8)}`
+  }
+
+  const formatExpiry = (expiry: number) => {
+    return new Date(expiry * 1000).toLocaleDateString('zh-TW')
+  }
+
   const handleSelectCredential = () => {
     if (!citizenCredential?.exists) return
     
-    // 從不同可能的字段中提取憑證ID
     const credentialId = citizenCredential.data?.credentialReference || 
                         citizenCredential.data?.credentialId ||
                         citizenCredential.address ||
@@ -179,7 +189,7 @@ export default function ApplyPage() {
       exists: citizenCredential.exists,
       address: citizenCredential.address || '',
       data: {
-        merkleRoot: '',
+        merkleRoot: citizenCredential.data?.merkleRoot || '',
         credentialReference: credentialId
       },
       expiry: citizenCredential.expiry || 0
@@ -354,8 +364,20 @@ export default function ApplyPage() {
         throw new Error(error.error || 'Failed to submit application')
       }
 
-      const { transaction: serializedTx } = await response.json()
+      const { transaction: serializedTx, cleanup } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
+      
+      const { executeTransaction } = useTransaction({
+        onSuccess: () => {
+          toast.success('申請提交成功！')
+          setTimeout(() => {
+            navigate('/applications')
+          }, 2000)
+        },
+        cleanupInfo: cleanup ? {
+          ipfsHashes: [cleanup.ipfsHash]
+        } : undefined
+      })
       
       await executeTransaction(tx)
 
@@ -363,7 +385,7 @@ export default function ApplyPage() {
       console.error('Error submitting application:', error)
       toast.error(error instanceof Error ? error.message : '申請失敗，請稍後再試')
     }
-  }, [listing, selectedCredential, disclosureStatus, formData, executeTransaction])
+  }, [listing, selectedCredential, disclosureStatus, formData, navigate])
 
   const formatPrice = (price: string) => {
     const num = parseInt(price) / 1_000_000
@@ -478,38 +500,94 @@ export default function ApplyPage() {
               <CardTitle>選擇自然人憑證</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div 
-                className={`p-4 border rounded-lg cursor-pointer transition-all ${
+              <Card 
+                className={`transition-all cursor-pointer ${
                   selectedCredential ? 'ring-2 ring-primary bg-primary/5' : 'hover:bg-muted/50'
                 }`}
                 onClick={handleSelectCredential}
               >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium">自然人憑證</h4>
-                    <p className="text-sm text-muted-foreground">
-                      地址: {citizenCredential?.address?.slice(0, 8)}...{citizenCredential?.address?.slice(-8)}
-                    </p>
-                    {citizenCredential?.data && (
-                      <p className="text-xs text-muted-foreground">
-                        ID: {citizenCredential.data.credentialReference || citizenCredential.data.credentialId || '未知'}
-                      </p>
-                    )}
-                    {citizenCredential?.expiry && (
-                      <p className="text-xs text-muted-foreground">
-                        到期: {new Date(citizenCredential.expiry * 1000).toLocaleDateString('zh-TW')}
-                      </p>
-                    )}
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">自然人憑證 #1</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">
+                        {new Date(citizenCredential?.expiry ? citizenCredential.expiry * 1000 : 0) > new Date() ? '有效' : '已過期'}
+                      </Badge>
+                    </div>
                   </div>
-                  <Badge variant="outline">有效</Badge>
-                </div>
-              </div>
-
-              {selectedCredential && (
-                <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded">
-                  將揭露：出生年月日、性別
-                </div>
-              )}
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-muted-foreground">憑證地址</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleExpanded(`address-${citizenCredential?.address}`)
+                          }}
+                          className="h-6 w-6 p-0"
+                        >
+                          {expandedFields.has(`address-${citizenCredential?.address}`) ? 
+                            <EyeOff className="h-3 w-3" /> : 
+                            <Eye className="h-3 w-3" />
+                          }
+                        </Button>
+                      </div>
+                      <div className="font-mono text-xs bg-muted p-2 rounded break-all">
+                        {formatDisplayText(citizenCredential?.address || '', `address-${citizenCredential?.address}`)}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <span className="text-muted-foreground">憑證ID</span>
+                      <div className="font-mono text-xs bg-muted p-2 rounded mt-1 break-all">
+                        {citizenCredential?.data?.credentialReference || citizenCredential?.data?.credentialId || citizenCredential?.address || '未知'}
+                      </div>
+                    </div>
+                    
+                    {citizenCredential?.data?.merkleRoot && (
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-muted-foreground">Merkle Root</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleExpanded(`merkle-${citizenCredential.data.merkleRoot}`)
+                            }}
+                            className="h-6 w-6 p-0"
+                          >
+                            {expandedFields.has(`merkle-${citizenCredential.data.merkleRoot}`) ? 
+                              <EyeOff className="h-3 w-3" /> : 
+                              <Eye className="h-3 w-3" />
+                            }
+                          </Button>
+                        </div>
+                        <div className="font-mono text-xs bg-muted p-2 rounded break-all">
+                          {formatDisplayText(citizenCredential.data.merkleRoot, `merkle-${citizenCredential.data.merkleRoot}`)}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div>
+                      <span className="text-muted-foreground">到期日</span>
+                      <div className="text-xs bg-muted p-2 rounded mt-1">
+                        {formatExpiry(citizenCredential?.expiry || 0)}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {selectedCredential && (
+                    <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded">
+                      將揭露：出生年月日、性別
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </CardContent>
           </Card>
 
@@ -821,8 +899,8 @@ export default function ApplyPage() {
             <Button variant="outline" onClick={() => handleStepBack('preview')}>
               返回編輯
             </Button>
-            <Button onClick={handleSubmitApplication} size="lg" disabled={submitting}>
-              {submitting ? '提交中...' : '確認提交申請'}
+            <Button onClick={handleSubmitApplication} size="lg">
+              確認提交申請
             </Button>
           </div>
         </div>

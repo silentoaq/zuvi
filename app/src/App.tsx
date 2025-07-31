@@ -9,7 +9,6 @@ import { ThemeProvider, useTheme } from 'next-themes'
 import { Toaster } from 'sonner'
 
 import Layout from '@/components/layout/Layout'
-import { TransactionProvider } from '@/components/transaction/TransactionProvider'
 import {
   HomePage,
   ListingDetailPage,
@@ -30,79 +29,77 @@ function AppContent() {
   const { theme } = useTheme()
 
   return (
-    <TransactionProvider>
-      <Router>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/listing/:id" element={<ListingDetailPage />} />
-            
-            <Route 
-              path="/applications" 
-              element={
-                <ProtectedRoute requireWallet>
-                  <ApplicationsPage />
-                </ProtectedRoute>
-              } 
-            />
-            
-            <Route 
-              path="/apply/:listingId" 
-              element={
-                <ProtectedRoute requireCitizen>
-                  <ApplyPage />
-                </ProtectedRoute>
-              } 
-            />
-            
-            <Route 
-              path="/listings/create" 
-              element={
-                <ProtectedRoute requireProperty>
-                  <CreateListingPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/listings/manage" 
-              element={
-                <ProtectedRoute requireProperty>
-                  <ManageListingsPage />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/leases/manage" 
-              element={
-                <ProtectedRoute requireWallet>
-                  <ManageLeasesPage />
-                </ProtectedRoute>
-              } 
-            />
-            
-            <Route 
-              path="/disputes" 
-              element={
-                <ProtectedRoute requireArbitrator>
-                  <DisputesPage />
-                </ProtectedRoute>
-              } 
-            />
-          </Routes>
-        </Layout>
-        <Toaster 
-          position="bottom-right" 
-          theme={theme as 'light' | 'dark' | 'system'} 
-        />
-      </Router>
-    </TransactionProvider>
+    <Router>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/listing/:id" element={<ListingDetailPage />} />
+
+          <Route
+            path="/applications"
+            element={
+              <ProtectedRoute requireWallet>
+                <ApplicationsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/apply/:listingId"
+            element={
+              <ProtectedRoute requireCitizen>
+                <ApplyPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/listings/create"
+            element={
+              <ProtectedRoute requireProperty>
+                <CreateListingPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/listings/manage"
+            element={
+              <ProtectedRoute requireProperty>
+                <ManageListingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/leases/manage"
+            element={
+              <ProtectedRoute requireWallet>
+                <ManageLeasesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/disputes"
+            element={
+              <ProtectedRoute requireArbitrator>
+                <DisputesPage />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </Layout>
+      <Toaster
+        position="bottom-right"
+        theme={theme as 'light' | 'dark' | 'system'}
+      />
+    </Router>
   )
 }
 
 function App() {
   const network = WalletAdapterNetwork.Devnet
   const endpoint = useMemo(() => clusterApiUrl(network), [network])
-  
+
   const wallets = useMemo(
     () => [new PhantomWalletAdapter()],
     []

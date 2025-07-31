@@ -83,14 +83,14 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
   const isProcessingRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
   const lastTransactionRef = useRef<string | null>(null)
-  const processedTransactionsRef = useRef<Set<string>>(new Set())
+  const processedTransactionsRef = useRef<Map<string, { timestamp: number; signature?: string }>>(new Map())
   const cleanupInfoRef = useRef<CleanupInfo | undefined>(options.cleanupInfo)
 
   const {
     onSuccess: originalOnSuccess,
     onError: originalOnError,
     onStepChange,
-    maxRetries = 2,
+    maxRetries = 0, // 改為預設不重試
     skipPreflight = false,
     commitment = 'confirmed',
   } = options
@@ -104,14 +104,35 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
     return new Connection('https://api.devnet.solana.com', commitment)
   }, [commitment])
 
-  const getTransactionId = useCallback((transaction: Transaction): string => {
-    const serialized = transaction.serialize({ requireAllSignatures: false })
-    return Buffer.from(serialized).toString('base64')
+  const getStableTransactionId = useCallback((transaction: Transaction): string => {
+    const instructions = transaction.instructions.map(ix => ({
+      programId: ix.programId.toString(),
+      keys: ix.keys.map(k => ({
+        pubkey: k.pubkey.toString(),
+        isSigner: k.isSigner,
+        isWritable: k.isWritable
+      })),
+      data: ix.data.toString('base64')
+    }))
+    
+    return Buffer.from(JSON.stringify(instructions)).toString('base64')
+  }, [])
+
+  const cleanupOldTransactions = useCallback(() => {
+    const now = Date.now()
+    const timeout = 30000
+    
+    for (const [id, info] of processedTransactionsRef.current.entries()) {
+      if (now - info.timestamp > timeout) {
+        processedTransactionsRef.current.delete(id)
+      }
+    }
   }, [])
 
   const sendTransactionWithRetry = useCallback(async (
     transaction: Transaction,
-    retryCount = 0
+    retryCount = 0,
+    stableId?: string
   ): Promise<string> => {
     const connection = getConnection()
     
@@ -120,13 +141,21 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
         throw new Error('Transaction was cancelled')
       }
 
-      const transactionId = getTransactionId(transaction)
+      cleanupOldTransactions()
+
+      const transactionId = stableId || getStableTransactionId(transaction)
       
-      if (processedTransactionsRef.current.has(transactionId)) {
+      const existingTransaction = processedTransactionsRef.current.get(transactionId)
+      if (existingTransaction) {
+        if (existingTransaction.signature) {
+          console.log('Transaction already completed, returning cached signature:', existingTransaction.signature)
+          updateStep('confirmed')
+          return existingTransaction.signature
+        }
         throw new Error('Transaction already in progress')
       }
 
-      processedTransactionsRef.current.add(transactionId)
+      processedTransactionsRef.current.set(transactionId, { timestamp: Date.now() })
 
       try {
         updateStep('preparing')
@@ -168,6 +197,10 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
         )
 
         lastTransactionRef.current = signature
+        processedTransactionsRef.current.set(transactionId, { 
+          timestamp: Date.now(), 
+          signature 
+        })
 
         updateStep('confirming')
         const confirmationBlockhash = transaction.recentBlockhash!
@@ -186,25 +219,39 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
         updateStep('confirmed')
         return signature
 
-      } finally {
-        processedTransactionsRef.current.delete(transactionId)
+      } catch (error: any) {
+        if (!error.message?.includes('Transaction already in progress')) {
+          processedTransactionsRef.current.delete(transactionId)
+        }
+        throw error
       }
 
     } catch (error: any) {
-      console.error(`Transaction attempt ${retryCount + 1} failed:`, error)
 
       if (abortControllerRef.current?.signal.aborted) {
         throw new Error('Transaction was cancelled')
       }
 
-      const isDuplicateError = 
+      const isAlreadyProcessedError = 
         error.message?.includes('This transaction has already been processed') ||
+        error.message?.includes('AlreadyProcessed')
+
+      if (isAlreadyProcessedError) {
+        console.log('Transaction already processed, treating as success')
+        updateStep('confirmed')
+        return ''
+      }
+
+      const isDuplicateInProgressError = 
         error.message?.includes('Transaction already in progress')
 
-      if (isDuplicateError && lastTransactionRef.current) {
-        console.log('Transaction already processed, using cached signature:', lastTransactionRef.current)
-        updateStep('confirmed')
-        return lastTransactionRef.current
+      if (isDuplicateInProgressError) {
+        const existingTransaction = processedTransactionsRef.current.get(stableId || getStableTransactionId(transaction))
+        if (existingTransaction?.signature !== undefined) {
+          console.log('Transaction already in progress, using cached result')
+          updateStep('confirmed')
+          return existingTransaction.signature
+        }
       }
 
       const isBlockhashError = 
@@ -228,7 +275,7 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
         cleanTransaction.signatures = []
         
         console.log('Retrying with clean transaction parameters...')
-        return sendTransactionWithRetry(cleanTransaction, retryCount + 1)
+        return sendTransactionWithRetry(cleanTransaction, retryCount + 1, stableId || getStableTransactionId(transaction))
       }
 
       if ((isBlockhashError || isNetworkError) && retryCount < maxRetries) {
@@ -241,13 +288,13 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
           transaction.lastValidBlockHeight = undefined
         }
         
-        return sendTransactionWithRetry(transaction, retryCount + 1)
+        return sendTransactionWithRetry(transaction, retryCount + 1, stableId || getStableTransactionId(transaction))
       }
 
       updateStep('error')
       throw error
     }
-  }, [signTransaction, publicKey, commitment, skipPreflight, maxRetries, getConnection, getTransactionId, updateStep])
+  }, [signTransaction, publicKey, commitment, skipPreflight, maxRetries, getConnection, getStableTransactionId, updateStep, cleanupOldTransactions])
 
   const executeTransaction = useCallback(async (
     transactionOrInstructions: Transaction | TransactionInstruction[],
@@ -299,15 +346,18 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
     } catch (error: any) {
       let errorMessage = error.message || 'Transaction failed'
       
-      if (errorMessage.includes('This transaction has already been processed') && lastTransactionRef.current) {
+      if (errorMessage.includes('This transaction has already been processed') || 
+          errorMessage.includes('AlreadyProcessed')) {
+        console.log('Transaction already processed, treating as success')
+        
         setState({
           isLoading: false,
           error: null,
-          signature: lastTransactionRef.current,
+          signature: '',
           step: 'confirmed'
         })
-        originalOnSuccess?.(lastTransactionRef.current)
-        return lastTransactionRef.current
+        originalOnSuccess?.('')
+        return ''
       }
       
       setState({
@@ -319,7 +369,10 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
 
       console.error('Transaction failed:', error)
       
-      if (!errorMessage.includes('cancelled') && !errorMessage.includes('already in progress')) {
+      if (!errorMessage.includes('cancelled') && 
+          !errorMessage.includes('already in progress') &&
+          !errorMessage.includes('This transaction has already been processed') &&
+          !errorMessage.includes('AlreadyProcessed')) {
         toast.error(errorMessage)
         
         if (currentCleanupInfo) {

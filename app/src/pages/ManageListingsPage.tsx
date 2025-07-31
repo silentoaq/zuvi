@@ -194,7 +194,7 @@ export default function ManageListingsPage() {
 
   const handleApplicationAction = useCallback(async (listing: string, applicant: string, action: 'approve' | 'reject') => {
     try {
-      const response = await fetch(`/api/applications/${listing}/${applicant}/${action}`, {
+      const response = await fetch(`/api/applications/${listing}/${action}/${applicant}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
@@ -681,14 +681,14 @@ export default function ManageListingsPage() {
                         </DialogDescription>
                       </DialogHeader>
                       <div className="max-h-96 overflow-y-auto">
-                        {applications[listing.publicKey]?.length > 0 ? (
+                        {applications[listing.publicKey] && applications[listing.publicKey].length > 0 ? (
                           <div className="space-y-3">
                             {applications[listing.publicKey].map((app) => (
                               <Card key={app.publicKey}>
                                 <CardContent className="p-4">
-                                  <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <div className="flex items-center space-x-2 mb-2">
+                                  <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center space-x-2">
                                         <Users className="h-4 w-4" />
                                         <span className="font-medium">
                                           {app.applicant.slice(0, 4)}...{app.applicant.slice(-4)}
@@ -696,35 +696,50 @@ export default function ManageListingsPage() {
                                         {getApplicationStatusBadge(app.status)}
                                       </div>
                                       <div className="text-sm text-muted-foreground">
-                                        申請時間：{new Date(app.createdAt * 1000).toLocaleDateString('zh-TW')}
+                                        {new Date(app.createdAt * 1000).toLocaleDateString('zh-TW')}
                                       </div>
                                     </div>
 
                                     {app.message && (
-                                      <div className="flex-1 ml-4">
-                                        {app.message.applicant && (
-                                          <div className="text-sm space-y-1">
-                                            <p><span className="font-medium">職業:</span> {app.message.applicant.occupation}</p>
-                                            <p><span className="font-medium">性別:</span> {app.message.applicant.gender}</p>
-                                          </div>
-                                        )}
-                                        {app.message.preferences && (
-                                          <div className="text-sm space-y-1 mt-2">
-                                            <p><span className="font-medium">期望入住:</span> {app.message.preferences.move_in_date}</p>
-                                            <p><span className="font-medium">期望租期:</span> {app.message.preferences.lease_term_months} 個月</p>
-                                          </div>
-                                        )}
+                                      <div className="pl-6 space-y-3">
+                                        <div className="grid grid-cols-2 gap-4 text-sm">
+                                          {app.message.applicant && (
+                                            <>
+                                              <div>
+                                                <span className="text-muted-foreground">職業：</span>
+                                                <span className="ml-1">{app.message.applicant.occupation}</span>
+                                              </div>
+                                              <div>
+                                                <span className="text-muted-foreground">性別：</span>
+                                                <span className="ml-1">{app.message.applicant.gender}</span>
+                                              </div>
+                                            </>
+                                          )}
+                                          {app.message.preferences && (
+                                            <>
+                                              <div>
+                                                <span className="text-muted-foreground">期望入住：</span>
+                                                <span className="ml-1">{app.message.preferences.move_in_date}</span>
+                                              </div>
+                                              <div>
+                                                <span className="text-muted-foreground">期望租期：</span>
+                                                <span className="ml-1">{app.message.preferences.lease_term_months} 個月</span>
+                                              </div>
+                                            </>
+                                          )}
+                                        </div>
+
                                         {app.message.message && (
-                                          <div className="mt-2">
-                                            <p className="font-medium text-sm">自我介紹:</p>
-                                            <p className="text-sm text-muted-foreground">{app.message.message}</p>
+                                          <div className="space-y-1">
+                                            <p className="text-sm text-muted-foreground">自我介紹：</p>
+                                            <p className="text-sm bg-muted/50 p-3 rounded">{app.message.message}</p>
                                           </div>
                                         )}
                                       </div>
                                     )}
 
                                     {app.status === 0 && (
-                                      <div className="flex gap-2 pt-2 border-t">
+                                      <div className="flex justify-end gap-2 pt-3 border-t">
                                         <Button
                                           size="sm"
                                           variant="default"

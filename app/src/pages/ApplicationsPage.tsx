@@ -399,7 +399,7 @@ function ApplicationCard({
             </Link>
           </Button>
 
-          {application.status === 0 && (
+          {(application.status === 0 || application.status === 2) && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button

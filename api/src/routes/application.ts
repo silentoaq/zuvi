@@ -94,8 +94,8 @@ router.delete('/:applicationId', async (req: AuthRequest, res, next) => {
       throw new ApiError(403, 'Not the applicant of this application');
     }
 
-    if (applicationAccount.status !== 0) {
-      throw new ApiError(400, 'Cannot cancel processed application');
+    if (applicationAccount.status !== 0 && applicationAccount.status !== 2) {
+      throw new ApiError(400, 'Cannot cancel approved application');
     }
 
     const messageIpfsHash = StorageService.bytesToIpfsHash(applicationAccount.messageUri);

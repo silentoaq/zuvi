@@ -114,7 +114,6 @@ export default function ApplyPage() {
   const citizenCredential = user?.credentialStatus?.twfido
 
   const submitTransaction = useTransaction({
-    maxRetries: 0,
     onSuccess: () => {
       toast.success('申請提交成功！')
       setTimeout(() => {

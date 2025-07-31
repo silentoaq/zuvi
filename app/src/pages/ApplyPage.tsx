@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
-import { Copy, CheckCircle, Clock, User, Building, MessageSquare, CalendarIcon, Eye, EyeOff } from 'lucide-react'
+import { Copy, CheckCircle, Clock, User, Building, CalendarIcon, Eye, EyeOff } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -100,6 +100,7 @@ export default function ApplyPage() {
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('')
   const [disclosureStatus, setDisclosureStatus] = useState<DisclosureStatus | null>(null)
   const [processing, setProcessing] = useState(false)
+  const [cleanupInfo, setCleanupInfo] = useState<{ ipfsHash?: string } | null>(null)
 
   const [formData, setFormData] = useState<ApplicationFormData>({
     occupation: '',
@@ -110,6 +111,29 @@ export default function ApplyPage() {
   })
 
   const citizenCredential = user?.credentialStatus?.twfido
+
+  const submitTransaction = useTransaction({
+    onSuccess: () => {
+      toast.success('申請提交成功！')
+      setTimeout(() => {
+        navigate('/applications')
+      }, 2000)
+    },
+    onError: () => {
+      if (cleanupInfo?.ipfsHash) {
+        fetch('/api/cleanup/transaction-failed', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ipfsHashes: [cleanupInfo.ipfsHash]
+          })
+        }).catch(console.error)
+      }
+    }
+  })
 
   useEffect(() => {
     if (listingId) {
@@ -360,86 +384,60 @@ export default function ApplyPage() {
       const { transaction: serializedTx, cleanup } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
 
-      const { executeTransaction } = useTransaction({
-        onSuccess: () => {
-          toast.success('申請提交成功！')
-          setTimeout(() => {
-            navigate('/applications')
-          }, 2000)
-        },
-        cleanupInfo: cleanup ? {
-          ipfsHashes: [cleanup.ipfsHash]
-        } : undefined
-      })
+      setCleanupInfo(cleanup || null)
 
-      await executeTransaction(tx)
+      if (cleanup?.ipfsHash) {
+        submitTransaction.updateCleanupInfo({
+          ipfsHashes: [cleanup.ipfsHash]
+        })
+      }
+
+      await submitTransaction.executeTransaction(tx)
 
     } catch (error) {
       console.error('Error submitting application:', error)
-      toast.error(error instanceof Error ? error.message : '申請失敗，請稍後再試')
+      toast.error(error instanceof Error ? error.message : '提交申請失敗，請稍後再試')
     }
-  }, [listing, selectedCredential, disclosureStatus, formData, navigate])
+  }, [listing, selectedCredential, disclosureStatus, formData, submitTransaction])
 
-  const formatPrice = (price: string) => {
-    const num = parseInt(price) / 1_000_000
-    return new Intl.NumberFormat('zh-TW').format(num)
+  const handleStepBack = (currentStep: string) => {
+    switch (currentStep) {
+      case 'waiting':
+        setStep('select')
+        setDisclosureStatus(null)
+        break
+      case 'completed':
+        setStep('select')
+        break
+      case 'form':
+        setStep('completed')
+        break
+      case 'preview':
+        setStep('form')
+        break
+      default:
+        break
+    }
   }
 
-  const handleStepBack = (fromStep: string) => {
-    if (fromStep === 'waiting') {
-      setStep('select')
-    } else if (fromStep === 'completed') {
-      setStep('select')
-    } else if (fromStep === 'form') {
-      setStep('completed')
-    } else if (fromStep === 'preview') {
-      setStep('form')
-    }
+  const formatPrice = (price: string) => {
+    return (parseInt(price) / 1_000_000).toLocaleString()
   }
 
   if (loading) {
     return (
-      <div className="max-w-2xl mx-auto space-y-6 animate-pulse">
-        <div className="h-8 bg-muted rounded w-3/4 mx-auto"></div>
-        <div className="h-48 bg-muted rounded"></div>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     )
   }
 
   if (!listing) {
-    return (
-      <div className="max-w-2xl mx-auto text-center py-12">
-        <h2 className="text-2xl font-bold mb-4">房源不存在</h2>
-        <Button onClick={() => navigate('/')}>回到首頁</Button>
-      </div>
-    )
-  }
-
-  if (!user?.credentialStatus?.twfido?.exists) {
-    return (
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold">申請租賃</h1>
-          <p className="text-muted-foreground">需要自然人憑證才能申請租賃</p>
-        </div>
-        <Alert>
-          <AlertDescription>
-            請先完成自然人憑證驗證才能申請租賃
-          </AlertDescription>
-        </Alert>
-        <div className="flex justify-center">
-          <Button asChild>
-            <a href="https://twfido.ddns.net" target="_blank" rel="noopener noreferrer">
-              前往申請自然人憑證
-            </a>
-          </Button>
-        </div>
-      </div>
-    )
+    return null
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6">
       <div className="text-center">
         <h1 className="text-3xl font-bold">申請租賃</h1>
         <p className="text-muted-foreground">
@@ -609,6 +607,11 @@ export default function ApplyPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-center">掃描 QR Code</CardTitle>
+              {selectedCredential && (
+                <div className="text-center text-sm text-muted-foreground">
+                  憑證編號: {selectedCredential.data.credentialReference}
+                </div>
+              )}
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex justify-center">
@@ -685,7 +688,7 @@ export default function ApplyPage() {
               重新驗證
             </Button>
             <Button onClick={() => setStep('form')} size="lg">
-              繼續填寫申請資料
+              下一步
             </Button>
           </div>
         </div>
@@ -693,13 +696,6 @@ export default function ApplyPage() {
 
       {step === 'form' && (
         <div className="space-y-6">
-          <Alert>
-            <MessageSquare className="h-4 w-4" />
-            <AlertDescription>
-              請填寫申請資料，讓房東更了解您
-            </AlertDescription>
-          </Alert>
-
           <Card>
             <CardHeader>
               <CardTitle>個人資料</CardTitle>
@@ -707,13 +703,16 @@ export default function ApplyPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="occupation">職業</Label>
-                  <Select value={formData.occupation} onValueChange={(value) => handleFormChange('occupation', value)}>
+                  <Label>職業</Label>
+                  <Select
+                    value={formData.occupation}
+                    onValueChange={(value) => handleFormChange('occupation', value)}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="請選擇職業" />
                     </SelectTrigger>
                     <SelectContent>
-                      {OCCUPATIONS.map(occupation => (
+                      {OCCUPATIONS.map((occupation) => (
                         <SelectItem key={occupation} value={occupation}>
                           {occupation}
                         </SelectItem>
@@ -721,14 +720,18 @@ export default function ApplyPage() {
                     </SelectContent>
                   </Select>
                 </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="companyType">工作性質</Label>
-                  <Select value={formData.companyType} onValueChange={(value) => handleFormChange('companyType', value)}>
+                  <Label>工作性質</Label>
+                  <Select
+                    value={formData.companyType}
+                    onValueChange={(value) => handleFormChange('companyType', value)}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="請選擇工作性質" />
                     </SelectTrigger>
                     <SelectContent>
-                      {COMPANY_TYPES.map(type => (
+                      {COMPANY_TYPES.map((type) => (
                         <SelectItem key={type} value={type}>
                           {type}
                         </SelectItem>
@@ -747,7 +750,7 @@ export default function ApplyPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="moveInDate">期望入住日期</Label>
+                  <Label>期望入住日期</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
@@ -758,34 +761,31 @@ export default function ApplyPage() {
                         )}
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {formData.moveInDate ? (
-                          format(formData.moveInDate, "yyyy-MM-dd")
-                        ) : (
-                          <span>選擇日期</span>
-                        )}
+                        {formData.moveInDate ? format(formData.moveInDate, "yyyy-MM-dd") : <span>選擇日期</span>}
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0 h-[320px] overflow-hidden" align="start">
+                    <PopoverContent className="w-auto p-0">
                       <CalendarComponent
                         mode="single"
                         selected={formData.moveInDate}
                         onSelect={(date) => handleFormChange('moveInDate', date)}
-                        disabled={(date) =>
-                          date < new Date() || date < new Date("1900-01-01")
-                        }
                         initialFocus
                       />
                     </PopoverContent>
                   </Popover>
                 </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="leaseTermMonths">期望租期</Label>
-                  <Select value={formData.leaseTermMonths.toString()} onValueChange={(value) => handleFormChange('leaseTermMonths', parseInt(value))}>
+                  <Label>期望租期</Label>
+                  <Select
+                    value={formData.leaseTermMonths.toString()}
+                    onValueChange={(value) => handleFormChange('leaseTermMonths', parseInt(value))}
+                  >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="請選擇租期" />
                     </SelectTrigger>
                     <SelectContent>
-                      {LEASE_TERMS.map(term => (
+                      {LEASE_TERMS.map((term) => (
                         <SelectItem key={term.value} value={term.value.toString()}>
                           {term.label}
                         </SelectItem>

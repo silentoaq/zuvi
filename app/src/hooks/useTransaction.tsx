@@ -84,6 +84,7 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
   const abortControllerRef = useRef<AbortController | null>(null)
   const lastTransactionRef = useRef<string | null>(null)
   const processedTransactionsRef = useRef<Set<string>>(new Set())
+  const cleanupInfoRef = useRef<CleanupInfo | undefined>(options.cleanupInfo)
 
   const {
     onSuccess: originalOnSuccess,
@@ -92,7 +93,6 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
     maxRetries = 2,
     skipPreflight = false,
     commitment = 'confirmed',
-    cleanupInfo
   } = options
 
   const updateStep = useCallback((step: TransactionStep) => {
@@ -250,7 +250,8 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
   }, [signTransaction, publicKey, commitment, skipPreflight, maxRetries, getConnection, getTransactionId, updateStep])
 
   const executeTransaction = useCallback(async (
-    transactionOrInstructions: Transaction | TransactionInstruction[]
+    transactionOrInstructions: Transaction | TransactionInstruction[],
+    dynamicCleanupInfo?: CleanupInfo
   ) => {
     if (isProcessingRef.current) {
       console.warn('Transaction already in progress, ignoring duplicate request')
@@ -259,6 +260,8 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
 
     isProcessingRef.current = true
     abortControllerRef.current = new AbortController()
+    
+    const currentCleanupInfo = dynamicCleanupInfo || cleanupInfoRef.current
 
     setState({
       isLoading: true,
@@ -319,8 +322,8 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
       if (!errorMessage.includes('cancelled') && !errorMessage.includes('already in progress')) {
         toast.error(errorMessage)
         
-        if (cleanupInfo) {
-          await callCleanupAPI(cleanupInfo)
+        if (currentCleanupInfo) {
+          await callCleanupAPI(currentCleanupInfo)
         }
         
         originalOnError?.(error)
@@ -332,7 +335,11 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
       isProcessingRef.current = false
       abortControllerRef.current = null
     }
-  }, [signTransaction, publicKey, sendTransactionWithRetry, originalOnSuccess, originalOnError, cleanupInfo])
+  }, [signTransaction, publicKey, sendTransactionWithRetry, originalOnSuccess, originalOnError])
+
+  const updateCleanupInfo = useCallback((newCleanupInfo: CleanupInfo | undefined) => {
+    cleanupInfoRef.current = newCleanupInfo
+  }, [])
 
   const reset = useCallback(() => {
     if (abortControllerRef.current && !abortControllerRef.current.signal.aborted) {
@@ -354,6 +361,7 @@ export const useTransaction = (options: UseTransactionOptions = {}) => {
   return {
     executeTransaction,
     reset,
+    updateCleanupInfo,
     isLoading: state.isLoading,
     error: state.error,
     signature: state.signature,

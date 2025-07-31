@@ -139,6 +139,15 @@ export default function ManageListingsPage() {
     }
   })
 
+  const updateTransaction = useTransaction({
+    onSuccess: async () => {
+      toast.success('房源更新成功')
+      setEditingListing(null)
+      setEditFormData(null)
+      fetchMyListings()
+    }
+  })
+
   useEffect(() => {
     if (user?.publicKey) {
       fetchMyListings()
@@ -153,14 +162,12 @@ export default function ManageListingsPage() {
           'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
         }
       })
-
       if (response.ok) {
         const data = await response.json()
         setListings(data.listings || [])
       }
     } catch (error) {
       console.error('Error fetching listings:', error)
-      toast.error('載入房源失敗')
     } finally {
       setLoading(false)
     }
@@ -173,7 +180,6 @@ export default function ManageListingsPage() {
           'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
         }
       })
-
       if (response.ok) {
         const data = await response.json()
         setApplications(prev => ({
@@ -186,20 +192,16 @@ export default function ManageListingsPage() {
     }
   }
 
-  const handleApplicationAction = useCallback(async (listingId: string, applicant: string, action: 'approve' | 'reject') => {
+  const handleApplicationAction = useCallback(async (listing: string, applicant: string, action: 'approve' | 'reject') => {
     try {
-      const response = await fetch(`/api/applications/${listingId}/${action}/${applicant}`, {
+      const response = await fetch(`/api/applications/${listing}/${applicant}/${action}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
         }
       })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || `Failed to ${action} application`)
-      }
+      if (!response.ok) throw new Error(`Failed to ${action} application`)
 
       const { transaction: serializedTx } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
@@ -267,21 +269,23 @@ export default function ManageListingsPage() {
     })
   }
 
-  const handleImageUpload = async (files: FileList | null) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
     if (!files || files.length === 0) return
 
-    const newImages = Array.from(files).filter(file => file.type.startsWith('image/'))
-    const totalImages = editFormData!.existingImages.length + editFormData!.uploadedImages.length + newImages.length
+    const currentImageCount = editFormData!.existingImages.length + editFormData!.uploadedImages.length
+    const maxAllowed = 10 - currentImageCount
 
-    if (totalImages > 10) {
-      toast.error('最多只能有10張照片')
+    if (files.length > maxAllowed) {
+      toast.error(`最多只能上傳 ${maxAllowed} 張照片`)
       return
     }
 
+    setUploading(true)
+
     try {
-      setUploading(true)
       const formData = new FormData()
-      newImages.forEach(file => {
+      Array.from(files).forEach(file => {
         formData.append('images', file)
       })
 
@@ -293,7 +297,7 @@ export default function ManageListingsPage() {
         body: formData
       })
 
-      if (!response.ok) throw new Error('Upload failed')
+      if (!response.ok) throw new Error('Failed to upload images')
 
       const { images } = await response.json()
       setEditFormData(prev => ({
@@ -439,47 +443,41 @@ export default function ManageListingsPage() {
       const { transaction: serializedTx, cleanup } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
 
-      const { executeTransaction } = useTransaction({
-        onSuccess: async () => {
-          toast.success('房源更新成功')
-          setEditingListing(null)
-          setEditFormData(null)
-          fetchMyListings()
-
-          if (cleanup && (cleanup.oldMetadataHash || cleanup.removedImageHashes?.length)) {
-            try {
-              const ipfsHashes = []
-              if (cleanup.oldMetadataHash) ipfsHashes.push(cleanup.oldMetadataHash)
-              if (cleanup.removedImageHashes?.length) ipfsHashes.push(...cleanup.removedImageHashes)
-
-              await fetch('/api/cleanup/transaction-failed', {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  ipfsHashes: ipfsHashes.length > 0 ? ipfsHashes : undefined
-                })
-              })
-            } catch (cleanupError) {
-              console.error('Cleanup failed:', cleanupError)
-            }
-          }
-        },
-        cleanupInfo: cleanup ? {
+      if (cleanup && (cleanup.oldMetadataHash || cleanup.removedImageHashes?.length)) {
+        updateTransaction.updateCleanupInfo({
           oldMetadataHash: cleanup.oldMetadataHash,
           removedImageHashes: cleanup.removedImageHashes
-        } : undefined
-      })
+        })
+      }
 
-      await executeTransaction(tx)
+      await updateTransaction.executeTransaction(tx)
+
+      if (cleanup && (cleanup.oldMetadataHash || cleanup.removedImageHashes?.length)) {
+        try {
+          const ipfsHashes = []
+          if (cleanup.oldMetadataHash) ipfsHashes.push(cleanup.oldMetadataHash)
+          if (cleanup.removedImageHashes?.length) ipfsHashes.push(...cleanup.removedImageHashes)
+
+          await fetch('/api/cleanup/transaction-failed', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              ipfsHashes: ipfsHashes.length > 0 ? ipfsHashes : undefined
+            })
+          })
+        } catch (cleanupError) {
+          console.error('Cleanup succeeded after transaction:', cleanupError)
+        }
+      }
 
     } catch (error) {
       console.error('Error updating listing:', error)
       toast.error(error instanceof Error ? error.message : '更新失敗')
     }
-  }, [editFormData, editingListing])
+  }, [editFormData, editingListing, updateTransaction])
 
   const formatPrice = (price: string) => {
     const num = parseInt(price) / 1_000_000
@@ -560,53 +558,48 @@ export default function ManageListingsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {listings.map((listing) => (
             <Card key={listing.publicKey} className="overflow-hidden">
-              <div className="relative">
-                {listing.metadata?.media?.images?.[listing.metadata.media.primary_image || 0] ? (
+              {listing.metadata?.media?.images?.[listing.metadata.media.primary_image || 0] ? (
+                <div className="aspect-[4/3] overflow-hidden">
                   <img
                     src={`https://indigo-definite-coyote-168.mypinata.cloud/ipfs/${listing.metadata.media.images[listing.metadata.media.primary_image || 0]}`}
                     alt={listing.metadata?.basic?.title}
-                    className="w-full h-48 object-cover"
+                    className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
                   />
-                ) : (
-                  <div className="w-full h-48 bg-muted flex items-center justify-center">
-                    <Home className="h-12 w-12 text-muted-foreground" />
-                  </div>
-                )}
-                <div className="absolute top-2 right-2">
+                </div>
+              ) : (
+                <div className="aspect-[4/3] bg-muted flex items-center justify-center">
+                  <Home className="h-12 w-12 text-muted-foreground" />
+                </div>
+              )}
+
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="font-semibold line-clamp-1">
+                    {listing.metadata?.basic?.title || '未命名房源'}
+                  </h3>
                   {getStatusBadge(listing.status)}
                 </div>
-              </div>
 
-              <CardContent className="p-4 space-y-3">
-                <h3 className="font-semibold text-lg truncate">
-                  {listing.metadata?.basic?.title || '房源'}
-                </h3>
-
-                <div className="flex items-center text-muted-foreground text-sm">
-                  <MapPin className="h-4 w-4 mr-1 flex-shrink-0" />
-                  <span className="truncate">{listing.address}</span>
+                <div className="text-sm text-muted-foreground space-y-1 mb-3">
+                  <div className="flex items-center">
+                    <MapPin className="h-3 w-3 mr-1" />
+                    <span className="line-clamp-1">{listing.address}</span>
+                  </div>
+                  {listing.metadata?.features && (
+                    <div className="flex items-center space-x-3">
+                      <div className="flex items-center">
+                        <Bed className="h-3 w-3 mr-1" />
+                        <span>{listing.metadata.features.bedroom}</span>
+                      </div>
+                      <div className="flex items-center">
+                        <Bath className="h-3 w-3 mr-1" />
+                        <span>{listing.metadata.features.bathroom}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {listing.metadata?.features && (
-                  <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                    <div className="flex items-center">
-                      <Bed className="h-4 w-4 mr-1" />
-                      <span>{listing.metadata.features.bedroom}房</span>
-                    </div>
-                    <div className="flex items-center">
-                      <Bath className="h-4 w-4 mr-1" />
-                      <span>{listing.metadata.features.bathroom}衛</span>
-                    </div>
-                    {listing.metadata?.basic?.area && (
-                      <div className="flex items-center">
-                        <Home className="h-4 w-4 mr-1" />
-                        <span>{listing.metadata.basic.area}坪</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="space-y-1">
+                <div className="pt-3 border-t">
                   <div className="text-xl font-bold text-primary">
                     ${formatPrice(listing.rent)} USDC
                   </div>
@@ -671,27 +664,30 @@ export default function ManageListingsPage() {
                       </DialogHeader>
                       <div className="max-h-96 overflow-y-auto">
                         {applications[listing.publicKey]?.length > 0 ? (
-                          <div className="space-y-4">
+                          <div className="space-y-3">
                             {applications[listing.publicKey].map((app) => (
                               <Card key={app.publicKey}>
                                 <CardContent className="p-4">
-                                  <div className="space-y-3">
-                                    <div className="flex justify-between items-start">
-                                      <div className="space-y-1">
-                                        <p className="font-medium">申請人: {app.applicant.slice(0, 8)}...</p>
-                                        <p className="text-sm text-muted-foreground">
-                                          申請時間: {new Date(app.createdAt * 1000).toLocaleDateString('zh-TW')}
-                                        </p>
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <div className="flex items-center space-x-2 mb-2">
+                                        <Users className="h-4 w-4" />
+                                        <span className="font-medium">
+                                          {app.applicant.slice(0, 4)}...{app.applicant.slice(-4)}
+                                        </span>
+                                        {getApplicationStatusBadge(app.status)}
                                       </div>
-                                      {getApplicationStatusBadge(app.status)}
+                                      <div className="text-sm text-muted-foreground">
+                                        申請時間：{new Date(app.createdAt * 1000).toLocaleDateString('zh-TW')}
+                                      </div>
                                     </div>
 
                                     {app.message && (
-                                      <div className="border-t pt-3">
+                                      <div className="flex-1 ml-4">
                                         {app.message.applicant && (
                                           <div className="text-sm space-y-1">
                                             <p><span className="font-medium">職業:</span> {app.message.applicant.occupation}</p>
-                                            <p><span className="font-medium">工作性質:</span> {app.message.applicant.company_type}</p>
+                                            <p><span className="font-medium">性別:</span> {app.message.applicant.gender}</p>
                                           </div>
                                         )}
                                         {app.message.preferences && (
@@ -792,7 +788,7 @@ export default function ManageListingsPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {HOUSE_TYPES.map(type => (
+                        {HOUSE_TYPES.map((type) => (
                           <SelectItem key={type.value} value={type.value}>
                             {type.label}
                           </SelectItem>
@@ -800,83 +796,40 @@ export default function ManageListingsPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="area">室內面積 (坪)</Label>
+                    <Label htmlFor="area">坪數</Label>
                     <Input
                       id="area"
                       type="number"
-                      value={editFormData.area || ''}
+                      value={editFormData.area}
                       onChange={(e) => setEditFormData(prev => ({ ...prev!, area: parseInt(e.target.value) || 0 }))}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="floor">樓層</Label>
-                    <Input
-                      id="floor"
-                      type="number"
-                      value={editFormData.floor}
-                      onChange={(e) => setEditFormData(prev => ({ ...prev!, floor: parseInt(e.target.value) || 1 }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="totalFloors">總樓層</Label>
-                    <Input
-                      id="totalFloors"
-                      type="number"
-                      value={editFormData.totalFloors}
-                      onChange={(e) => setEditFormData(prev => ({ ...prev!, totalFloors: parseInt(e.target.value) || 1 }))}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="bedroom">房間數</Label>
-                    <Input
-                      id="bedroom"
-                      type="number"
-                      value={editFormData.bedroom}
-                      onChange={(e) => setEditFormData(prev => ({ ...prev!, bedroom: parseInt(e.target.value) || 1 }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="livingroom">客廳數</Label>
-                    <Input
-                      id="livingroom"
-                      type="number"
-                      value={editFormData.livingroom}
-                      onChange={(e) => setEditFormData(prev => ({ ...prev!, livingroom: parseInt(e.target.value) || 0 }))}
-                      min="0"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bathroom">衛浴數</Label>
-                    <Input
-                      id="bathroom"
-                      type="number"
-                      value={editFormData.bathroom}
-                      onChange={(e) => setEditFormData(prev => ({ ...prev!, bathroom: parseInt(e.target.value) || 1 }))}
-                    />
-                  </div>
-                  <div className="flex items-center space-x-2 pt-6">
-                    <Checkbox
-                      id="balcony"
-                      checked={editFormData.balcony}
-                      onCheckedChange={(checked) => setEditFormData(prev => ({ ...prev!, balcony: !!checked }))}
-                    />
-                    <Label htmlFor="balcony">陽台</Label>
+                    <Label htmlFor="floor">樓層 / 總樓層</Label>
+                    <div className="flex space-x-2">
+                      <Input
+                        id="floor"
+                        type="number"
+                        value={editFormData.floor}
+                        onChange={(e) => setEditFormData(prev => ({ ...prev!, floor: parseInt(e.target.value) || 1 }))}
+                      />
+                      <span className="self-center">/</span>
+                      <Input
+                        type="number"
+                        value={editFormData.totalFloors}
+                        onChange={(e) => setEditFormData(prev => ({ ...prev!, totalFloors: parseInt(e.target.value) || 1 }))}
+                      />
+                    </div>
                   </div>
                 </div>
-
                 <div className="space-y-2">
-                  <Label>房源描述</Label>
+                  <Label htmlFor="description">房源描述</Label>
                   <Textarea
+                    id="description"
+                    rows={4}
                     value={editFormData.description}
                     onChange={(e) => setEditFormData(prev => ({ ...prev!, description: e.target.value }))}
-                    rows={3}
                   />
                 </div>
               </TabsContent>
@@ -888,70 +841,111 @@ export default function ManageListingsPage() {
                     <Input
                       id="rent"
                       type="number"
-                      value={editFormData.rent || ''}
-                      onChange={(e) => {
-                        const newRent = parseInt(e.target.value) || 0
-                        setEditFormData(prev => ({ ...prev!, rent: newRent }))
-                      }}
+                      value={editFormData.rent}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev!, rent: parseInt(e.target.value) || 0 }))}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="deposit">押金 (個月)</Label>
+                    <Label htmlFor="deposit">押金 (USDC)</Label>
                     <Input
                       id="deposit"
                       type="number"
-                      value={editFormData.rent > 0 ? Math.round(editFormData.deposit / editFormData.rent * 2) / 2 : ''}
-                      onChange={(e) => {
-                        const months = parseFloat(e.target.value) || 0
-                        setEditFormData(prev => ({ ...prev!, deposit: months * prev!.rent }))
-                      }}
-                      step="0.5"
-                      min="1"
-                      max="3"
+                      value={editFormData.deposit}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev!, deposit: parseInt(e.target.value) || 0 }))}
                     />
-                    <div className="text-xs text-muted-foreground">
-                      約 {editFormData.deposit.toLocaleString()} USDC
-                    </div>
                   </div>
                 </div>
               </TabsContent>
 
-              <TabsContent value="features" className="space-y-6">
-                <div>
-                  <Label className="text-base font-medium">設施設備</Label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-3">
-                    {FACILITIES.map(facility => (
-                      <div key={facility} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`facility-${facility}`}
-                          checked={editFormData.facilities.includes(facility)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setEditFormData(prev => ({ ...prev!, facilities: [...prev!.facilities, facility] }))
-                            } else {
-                              setEditFormData(prev => ({ ...prev!, facilities: prev!.facilities.filter(f => f !== facility) }))
-                            }
-                          }}
-                        />
-                        <Label htmlFor={`facility-${facility}`} className="text-sm">
-                          {facility}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
+              <TabsContent value="features" className="space-y-4">
                 <div className="space-y-4">
                   <div>
-                    <Label className="text-base font-medium">住宿規範</Label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                    <Label>房間配置</Label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="bedroom" className="text-sm">房間</Label>
+                        <Input
+                          id="bedroom"
+                          type="number"
+                          min="0"
+                          value={editFormData.bedroom}
+                          onChange={(e) => setEditFormData(prev => ({ ...prev!, bedroom: parseInt(e.target.value) || 0 }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="livingroom" className="text-sm">客廳</Label>
+                        <Input
+                          id="livingroom"
+                          type="number"
+                          min="0"
+                          value={editFormData.livingroom}
+                          onChange={(e) => setEditFormData(prev => ({ ...prev!, livingroom: parseInt(e.target.value) || 0 }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="bathroom" className="text-sm">衛浴</Label>
+                        <Input
+                          id="bathroom"
+                          type="number"
+                          min="0"
+                          value={editFormData.bathroom}
+                          onChange={(e) => setEditFormData(prev => ({ ...prev!, bathroom: parseInt(e.target.value) || 0 }))}
+                        />
+                      </div>
+                      <div className="flex items-end space-x-2">
+                        <Checkbox
+                          id="balcony"
+                          checked={editFormData.balcony}
+                          onCheckedChange={(checked) => setEditFormData(prev => ({ ...prev!, balcony: !!checked }))}
+                        />
+                        <Label htmlFor="balcony" className="text-sm cursor-pointer">陽台</Label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label>提供設施</Label>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-2">
+                      {FACILITIES.map((facility) => (
+                        <div key={facility} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`facility-${facility}`}
+                            checked={editFormData.facilities.includes(facility)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setEditFormData(prev => ({
+                                  ...prev!,
+                                  facilities: [...prev!.facilities, facility]
+                                }))
+                              } else {
+                                setEditFormData(prev => ({
+                                  ...prev!,
+                                  facilities: prev!.facilities.filter(f => f !== facility)
+                                }))
+                              }
+                            }}
+                          />
+                          <Label
+                            htmlFor={`facility-${facility}`}
+                            className="text-sm cursor-pointer"
+                          >
+                            {facility}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label>租屋規則</Label>
+                    <div className="space-y-3 mt-2">
                       <div className="flex items-center space-x-2">
                         <Checkbox
                           id="pet"
                           checked={editFormData.pet}
                           onCheckedChange={(checked) => setEditFormData(prev => ({ ...prev!, pet: !!checked }))}
                         />
-                        <Label htmlFor="pet">可養寵物</Label>
+                        <Label htmlFor="pet" className="cursor-pointer">可養寵物</Label>
                       </div>
                       <div className="flex items-center space-x-2">
                         <Checkbox
@@ -959,108 +953,96 @@ export default function ManageListingsPage() {
                           checked={editFormData.cooking}
                           onCheckedChange={(checked) => setEditFormData(prev => ({ ...prev!, cooking: !!checked }))}
                         />
-                        <Label htmlFor="cooking">可開伙</Label>
+                        <Label htmlFor="cooking" className="cursor-pointer">可開伙</Label>
                       </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-3">
-                      <Label className="text-base font-medium">水費計費方式</Label>
-                      <RadioGroup
-                        value={editFormData.waterBilling}
-                        onValueChange={(value) => setEditFormData(prev => ({ ...prev!, waterBilling: value }))}
-                        className="space-y-2"
-                      >
-                        {BILLING_OPTIONS.map(option => (
-                          <div key={`water-${option.value}`} className="flex items-center space-x-2">
-                            <RadioGroupItem value={option.value} id={`water-${option.value}`} />
-                            <Label htmlFor={`water-${option.value}`} className="text-sm">
-                              {option.label}
-                            </Label>
-                          </div>
-                        ))}
-                      </RadioGroup>
-                    </div>
-
-                    <div className="space-y-3">
-                      <Label className="text-base font-medium">電費計費方式</Label>
-                      <RadioGroup
-                        value={editFormData.electricityBilling}
-                        onValueChange={(value) => setEditFormData(prev => ({ ...prev!, electricityBilling: value }))}
-                        className="space-y-2"
-                      >
-                        {BILLING_OPTIONS.map(option => (
-                          <div key={`electricity-${option.value}`} className="flex items-center space-x-2">
-                            <RadioGroupItem value={option.value} id={`electricity-${option.value}`} />
-                            <Label htmlFor={`electricity-${option.value}`} className="text-sm">
-                              {option.label}
-                            </Label>
-                          </div>
-                        ))}
-                      </RadioGroup>
+                  <div>
+                    <Label>費用計算</Label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="waterBilling" className="text-sm">水費</Label>
+                        <RadioGroup value={editFormData.waterBilling} onValueChange={(value) => setEditFormData(prev => ({ ...prev!, waterBilling: value }))}>
+                          {BILLING_OPTIONS.map((option) => (
+                            <div key={option.value} className="flex items-center space-x-2">
+                              <RadioGroupItem value={option.value} id={`water-${option.value}`} />
+                              <Label htmlFor={`water-${option.value}`} className="cursor-pointer">
+                                {option.label}
+                              </Label>
+                            </div>
+                          ))}
+                        </RadioGroup>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="electricityBilling" className="text-sm">電費</Label>
+                        <RadioGroup value={editFormData.electricityBilling} onValueChange={(value) => setEditFormData(prev => ({ ...prev!, electricityBilling: value }))}>
+                          {BILLING_OPTIONS.map((option) => (
+                            <div key={option.value} className="flex items-center space-x-2">
+                              <RadioGroupItem value={option.value} id={`electricity-${option.value}`} />
+                              <Label htmlFor={`electricity-${option.value}`} className="cursor-pointer">
+                                {option.label}
+                              </Label>
+                            </div>
+                          ))}
+                        </RadioGroup>
+                      </div>
                     </div>
                   </div>
                 </div>
               </TabsContent>
 
               <TabsContent value="images" className="space-y-4">
-                <div>
-                  <Label className="text-base font-medium">房源照片</Label>
+                <div className="space-y-4">
+                  <div>
+                    <Label>房源照片</Label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      最多可上傳 10 張照片，支援 JPG、PNG 格式
+                    </p>
+                  </div>
 
-                  <div className="space-y-6 mt-3">
-                    {editFormData.existingImages.length > 0 && (
-                      <div>
-                        <h4 className="text-sm font-medium text-muted-foreground mb-3">現有照片</h4>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          {editFormData.existingImages.map((image, index) => (
-                            <div key={image.id} className="relative group">
-                              <img
-                                src={image.gatewayUrl}
-                                alt={`現有圖片 ${index + 1}`}
-                                className="w-full h-24 object-cover rounded-lg"
-                              />
-                              {index === 0 && (
-                                <div className="absolute top-1 left-1 bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded">
-                                  主圖
-                                </div>
-                              )}
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                className="absolute -top-2 -right-2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                onClick={() => removeExistingImage(index)}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-sm font-medium mb-2">現有照片</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {editFormData.existingImages.map((image, index) => (
+                          <div key={image.id} className="relative group">
+                            <img
+                              src={image.gatewayUrl}
+                              alt={image.filename}
+                              className="w-full h-24 object-cover rounded-lg"
+                            />
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
+                              onClick={() => removeExistingImage(index)}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
                       </div>
-                    )}
+                    </div>
 
                     {editFormData.uploadedImages.length > 0 && (
                       <div>
-                        <h4 className="text-sm font-medium text-muted-foreground mb-3">新上傳照片</h4>
+                        <h4 className="text-sm font-medium mb-2">新上傳的照片</h4>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                           {editFormData.uploadedImages.map((image, index) => (
                             <div key={image.id} className="relative group">
                               <img
                                 src={image.gatewayUrl}
-                                alt={`新圖片 ${index + 1}`}
+                                alt={image.filename}
                                 className="w-full h-24 object-cover rounded-lg"
-                                onError={(e) => {
-                                  const target = e.target as HTMLImageElement
-                                  target.src = `https://indigo-definite-coyote-168.mypinata.cloud/ipfs/${image.ipfsHash}`
-                                }}
                               />
                               <Button
-                                variant="destructive"
                                 size="sm"
-                                className="absolute -top-2 -right-2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                variant="destructive"
+                                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
                                 onClick={() => removeUploadedImage(index)}
                               >
-                                <X className="h-4 w-4" />
+                                <X className="h-3 w-3" />
                               </Button>
                             </div>
                           ))}
@@ -1069,33 +1051,29 @@ export default function ManageListingsPage() {
                     )}
 
                     <div>
-                      <h4 className="text-sm font-medium text-muted-foreground mb-3">新增照片</h4>
-                      <input
-                        type="file"
-                        multiple
-                        accept="image/*"
-                        onChange={(e) => handleImageUpload(e.target.files)}
-                        className="hidden"
-                        id="image-upload"
-                        disabled={uploading}
-                      />
+                      {editFormData.existingImages.length + editFormData.uploadedImages.length < 10 && (
+                        <Label htmlFor="image-upload" className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                          <Input
+                            id="image-upload"
+                            type="file"
+                            multiple
+                            accept="image/*"
+                            onChange={handleFileUpload}
+                            disabled={uploading}
+                            className="hidden"
+                          />
+                          <div className="w-full h-24 border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center hover:border-muted-foreground/50 transition-colors">
+                            <Upload className="h-6 w-6 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground mt-1">
+                              {uploading ? '上傳中...' : '添加照片'}
+                            </span>
+                          </div>
+                        </Label>
+                      )}
+                    </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {(editFormData.existingImages.length + editFormData.uploadedImages.length) < 10 && (
-                          <Label htmlFor="image-upload" className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                            <div className="w-full h-24 border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center hover:border-muted-foreground/50 transition-colors">
-                              <Upload className="h-6 w-6 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground mt-1">
-                                {uploading ? '上傳中...' : '添加照片'}
-                              </span>
-                            </div>
-                          </Label>
-                        )}
-                      </div>
-
-                      <div className="text-xs text-muted-foreground mt-2">
-                        已有 {editFormData.existingImages.length + editFormData.uploadedImages.length} / 10 張照片
-                      </div>
+                    <div className="text-xs text-muted-foreground mt-2">
+                      已有 {editFormData.existingImages.length + editFormData.uploadedImages.length} / 10 張照片
                     </div>
                   </div>
                 </div>

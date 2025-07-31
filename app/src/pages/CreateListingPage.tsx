@@ -99,6 +99,8 @@ export default function CreateListingPage() {
   const [uploading, setUploading] = useState(false)
   const [existingListings, setExistingListings] = useState<ExistingListing[]>([])
   const [loadingExistingListings, setLoadingExistingListings] = useState(true)
+  const [deletingImages, setDeletingImages] = useState<Set<string>>(new Set())
+  const [cleanupInfo, setCleanupInfo] = useState<{ metadataHash?: string; imageHashes?: string[] } | null>(null)
 
   const [formData, setFormData] = useState<ListingFormData>({
     title: '',
@@ -122,6 +124,37 @@ export default function CreateListingPage() {
   })
 
   const propertyCredentials = user?.credentialStatus?.twland?.attestations || []
+
+  const publishTransaction = useTransaction({
+    onSuccess: () => {
+      toast.success('房源發布成功！')
+      setTimeout(() => {
+        window.location.href = '/'
+      }, 2000)
+    },
+    onError: async () => {
+      await clearAllTempImages()
+      setFormData(prev => ({ ...prev, uploadedImages: [] }))
+      
+      if (cleanupInfo?.metadataHash || cleanupInfo?.imageHashes) {
+        try {
+          await fetch('/api/cleanup/transaction-failed', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              ipfsHashes: cleanupInfo.metadataHash ? [cleanupInfo.metadataHash] : undefined,
+              imageIds: cleanupInfo.imageHashes
+            })
+          })
+        } catch (error) {
+          console.error('Cleanup failed:', error)
+        }
+      }
+    }
+  })
 
   useEffect(() => {
     clearAllTempImages()
@@ -181,7 +214,7 @@ export default function CreateListingPage() {
         const { images } = await response.json()
         await Promise.all(
           images.map((img: UploadedImage) =>
-            fetch(`/api/listings/image/${img.id}`, {
+            fetch(`/api/listings/image/${img.ipfsHash}`, { // 使用 ipfsHash
               method: 'DELETE',
               headers: {
                 'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
@@ -327,56 +360,62 @@ export default function CreateListingPage() {
     }))
   }
 
-  const handleImageUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0) return
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return
 
-    const newImages = Array.from(files).filter(file => file.type.startsWith('image/'))
-    if (newImages.length + formData.uploadedImages.length > 10) {
-      toast.error('最多只能上傳10張照片')
+    const file = e.target.files[0]
+    
+    if (!file.type.startsWith('image/')) {
+      toast.error('請選擇圖片檔案')
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('圖片大小不能超過 5MB')
       return
     }
 
     try {
       setUploading(true)
-      const formDataToSend = new FormData()
-      newImages.forEach(file => {
-        formDataToSend.append('images', file)
-      })
+      const formData = new FormData()
+      formData.append('images', file) // 改為 images（複數）
 
-      const response = await fetch('/api/listings/upload-images', {
+      const response = await fetch('/api/listings/upload-images', { // 改為正確的端點
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
         },
-        body: formDataToSend
+        body: formData
       })
 
       if (!response.ok) {
         throw new Error('Upload failed')
       }
 
-      const { images } = await response.json()
-      setFormData(prev => ({
-        ...prev,
-        uploadedImages: [...prev.uploadedImages, ...images]
-      }))
-
-      toast.success(`成功上傳 ${images.length} 張照片`)
+      const data = await response.json()
+      
+      // API 返回 images 陣列，取第一個
+      if (data.images && data.images.length > 0) {
+        setFormData(prev => ({
+          ...prev,
+          uploadedImages: [...prev.uploadedImages, data.images[0]]
+        }))
+        toast.success('照片上傳成功')
+      }
     } catch (error) {
-      console.error('Error uploading images:', error)
-      toast.error('照片上傳失敗')
+      console.error('Error uploading image:', error)
+      toast.error('照片上傳失敗，請稍後再試')
     } finally {
       setUploading(false)
+      e.target.value = ''
     }
   }
 
-  const [deletingImages, setDeletingImages] = useState<Set<string>>(new Set())
-
-  const removeImage = async (index: number) => {
+  const handleRemoveImage = async (index: number) => {
     const imageToRemove = formData.uploadedImages[index]
-    if (!imageToRemove || deletingImages.has(imageToRemove.id)) return
+    if (!imageToRemove || deletingImages.has(imageToRemove.ipfsHash)) return
 
-    setDeletingImages(prev => new Set(prev).add(imageToRemove.id))
+    setDeletingImages(prev => new Set(prev).add(imageToRemove.ipfsHash))
 
     setFormData(prev => ({
       ...prev,
@@ -384,7 +423,7 @@ export default function CreateListingPage() {
     }))
 
     try {
-      const response = await fetch(`/api/listings/image/${imageToRemove.id}`, {
+      const response = await fetch(`/api/listings/image/${imageToRemove.ipfsHash}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
@@ -411,7 +450,7 @@ export default function CreateListingPage() {
     } finally {
       setDeletingImages(prev => {
         const newSet = new Set(prev)
-        newSet.delete(imageToRemove.id)
+        newSet.delete(imageToRemove.ipfsHash)
         return newSet
       })
     }
@@ -508,7 +547,7 @@ export default function CreateListingPage() {
         rent: formData.rent * 1_000_000,
         deposit: formData.deposit * 1_000_000,
         metadata,
-        imageIds: formData.uploadedImages.map(img => img.id)
+        imageIds: formData.uploadedImages.map(img => img.ipfsHash) // 使用 ipfsHash
       }
 
       const response = await fetch('/api/listings/create', {
@@ -528,24 +567,16 @@ export default function CreateListingPage() {
       const { transaction: serializedTx, cleanup } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
 
-      const { executeTransaction } = useTransaction({
-        onSuccess: () => {
-          toast.success('房源發布成功！')
-          setTimeout(() => {
-            window.location.href = '/'
-          }, 2000)
-        },
-        onError: async () => {
-          await clearAllTempImages()
-          setFormData(prev => ({ ...prev, uploadedImages: [] }))
-        },
-        cleanupInfo: cleanup ? {
+      setCleanupInfo(cleanup || null)
+      
+      if (cleanup) {
+        publishTransaction.updateCleanupInfo({
           metadataHash: cleanup.metadataHash,
           imageIds: cleanup.imageHashes
-        } : undefined
-      })
+        })
+      }
 
-      await executeTransaction(tx)
+      await publishTransaction.executeTransaction(tx)
 
     } catch (error) {
       console.error('Error publishing listing:', error)
@@ -553,7 +584,7 @@ export default function CreateListingPage() {
       setFormData(prev => ({ ...prev, uploadedImages: [] }))
       toast.error(error instanceof Error ? error.message : '發布失敗，請稍後再試')
     }
-  }, [selectedCredential, disclosureStatus, formData])
+  }, [selectedCredential, disclosureStatus, formData, publishTransaction])
 
   const getHouseTypeLabel = (value: string) => {
     return HOUSE_TYPES.find(t => t.value === value)?.label || value
@@ -665,7 +696,6 @@ export default function CreateListingPage() {
                                 toggleExpanded(`address-${credential.address}`)
                               }}
                               className="h-6 w-6 p-0"
-                              disabled={isDisabled}
                             >
                               {expandedFields.has(`address-${credential.address}`) ?
                                 <EyeOff className="h-3 w-3" /> :
@@ -696,7 +726,6 @@ export default function CreateListingPage() {
                                 toggleExpanded(`merkle-${credential.data.merkleRoot}`)
                               }}
                               className="h-6 w-6 p-0"
-                              disabled={isDisabled}
                             >
                               {expandedFields.has(`merkle-${credential.data.merkleRoot}`) ?
                                 <EyeOff className="h-3 w-3" /> :
@@ -743,7 +772,7 @@ export default function CreateListingPage() {
                 disabled={loading}
                 size="lg"
               >
-                {loading ? '發起中...' : '開始憑證揭露'}
+                {loading ? '發起中...' : '開始房產驗證'}
               </Button>
             </div>
           )}
@@ -755,7 +784,7 @@ export default function CreateListingPage() {
           <Alert>
             <Clock className="h-4 w-4" />
             <AlertDescription>
-              請使用您的憑證錢包掃描 QR Code 完成選擇性揭露
+              請使用您的憑證錢包掃描 QR Code 完成房產驗證
             </AlertDescription>
           </Alert>
 
@@ -798,7 +827,7 @@ export default function CreateListingPage() {
               </div>
 
               <div className="text-center text-sm text-muted-foreground">
-                等待憑證揭露完成...
+                等待房產驗證完成...
               </div>
 
               <div className="flex justify-center">
@@ -902,12 +931,15 @@ export default function CreateListingPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="type">房屋類型</Label>
-                    <Select value={formData.type} onValueChange={(value) => handleFormChange('type', value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="選擇房屋類型" />
+                    <Select
+                      value={formData.type}
+                      onValueChange={(value) => handleFormChange('type', value)}
+                    >
+                      <SelectTrigger id="type">
+                        <SelectValue placeholder="請選擇房屋類型" />
                       </SelectTrigger>
                       <SelectContent>
-                        {HOUSE_TYPES.map(type => (
+                        {HOUSE_TYPES.map((type) => (
                           <SelectItem key={type.value} value={type.value}>
                             {type.label}
                           </SelectItem>
@@ -917,19 +949,19 @@ export default function CreateListingPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="area">室內面積 (坪)</Label>
+                    <Label htmlFor="area">實際使用坪數</Label>
                     <Input
                       id="area"
                       type="number"
-                      value={formData.area || ''}
+                      value={formData.area}
                       onChange={(e) => handleFormChange('area', parseInt(e.target.value) || 0)}
-                      min="1"
+                      placeholder="坪"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="floor">樓層</Label>
+                    <Label htmlFor="floor">所在樓層</Label>
                     <Input
                       id="floor"
                       type="number"
@@ -939,7 +971,7 @@ export default function CreateListingPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="totalFloors">總樓層</Label>
+                    <Label htmlFor="totalFloors">總樓層數</Label>
                     <Input
                       id="totalFloors"
                       type="number"
@@ -949,16 +981,23 @@ export default function CreateListingPage() {
                     />
                   </div>
                 </div>
+              </CardContent>
+            </Card>
 
-                <div className="grid grid-cols-3 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>空間配置</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="bedroom">房間數</Label>
                     <Input
                       id="bedroom"
                       type="number"
                       value={formData.bedroom}
-                      onChange={(e) => handleFormChange('bedroom', parseInt(e.target.value) || 1)}
-                      min="1"
+                      onChange={(e) => handleFormChange('bedroom', parseInt(e.target.value) || 0)}
+                      min="0"
                     />
                   </div>
                   <div className="space-y-2">
@@ -967,7 +1006,7 @@ export default function CreateListingPage() {
                       id="livingroom"
                       type="number"
                       value={formData.livingroom}
-                      onChange={(e) => handleFormChange('livingroom', parseInt(e.target.value) || 1)}
+                      onChange={(e) => handleFormChange('livingroom', parseInt(e.target.value) || 0)}
                       min="0"
                     />
                   </div>
@@ -977,19 +1016,18 @@ export default function CreateListingPage() {
                       id="bathroom"
                       type="number"
                       value={formData.bathroom}
-                      onChange={(e) => handleFormChange('bathroom', parseInt(e.target.value) || 1)}
-                      min="1"
+                      onChange={(e) => handleFormChange('bathroom', parseInt(e.target.value) || 0)}
+                      min="0"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>陽台</Label>
-                    <div className="flex items-center space-x-2 mt-2">
+                    <Label htmlFor="balcony">陽台</Label>
+                    <div className="pt-2">
                       <Checkbox
                         id="balcony"
                         checked={formData.balcony}
-                        onCheckedChange={(checked) => handleFormChange('balcony', !!checked)}
+                        onCheckedChange={(checked) => handleFormChange('balcony', checked)}
                       />
-                      <Label htmlFor="balcony">有陽台</Label>
                     </div>
                   </div>
                 </div>
@@ -1007,43 +1045,24 @@ export default function CreateListingPage() {
                     <Input
                       id="rent"
                       type="number"
-                      value={formData.rent || ''}
-                      onChange={(e) => {
-                        const newRent = parseInt(e.target.value) || 0
-                        handleFormChange('rent', newRent)
-                        if (newRent > 0 && formData.deposit === 0) {
-                          handleFormChange('deposit', newRent * 2)
-                        } else if (formData.deposit > 0 && newRent > 0) {
-                          const currentMonths = Math.round(formData.deposit / (formData.rent || 1) * 2) / 2
-                          handleFormChange('deposit', Math.round(currentMonths * newRent))
-                        }
-                      }}
+                      value={formData.rent}
+                      onChange={(e) => handleFormChange('rent', parseInt(e.target.value) || 0)}
+                      placeholder="0"
                       min="1"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="deposit">押金</Label>
-                    <div className="flex items-center space-x-2">
-                      <Input
-                        id="deposit"
-                        type="number"
-                        value={formData.rent > 0 && formData.deposit > 0 ? Math.round(formData.deposit / formData.rent * 2) / 2 : ''}
-                        onChange={(e) => {
-                          const months = parseFloat(e.target.value) || 0
-                          handleFormChange('deposit', Math.round(months * formData.rent))
-                        }}
-                        min="1"
-                        max="3"
-                        step="0.5"
-                        className="flex-1"
-                        placeholder="2.0"
-                      />
-                      <span className="text-sm text-muted-foreground whitespace-nowrap">個月租金</span>
-                    </div>
+                    <Label htmlFor="deposit">押金 (USDC)</Label>
+                    <Input
+                      id="deposit"
+                      type="number"
+                      value={formData.deposit}
+                      onChange={(e) => handleFormChange('deposit', parseInt(e.target.value) || 0)}
+                      placeholder="0"
+                      min="1"
+                    />
                     <div className="text-xs text-muted-foreground">
-                      {formData.deposit > 0 && formData.rent > 0 &&
-                        `約 ${formData.deposit.toLocaleString()} USDC (${Math.round(formData.deposit / formData.rent * 2) / 2} 個月)`
-                      }
+                      建議設定為 1-3 個月租金
                     </div>
                   </div>
                 </div>
@@ -1052,20 +1071,23 @@ export default function CreateListingPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>設施設備</CardTitle>
+                <CardTitle>設備設施</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {FACILITIES.map(facility => (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {FACILITIES.map((facility) => (
                     <div key={facility} className="flex items-center space-x-2">
                       <Checkbox
-                        id={`facility-${facility}`}
+                        id={facility}
                         checked={formData.facilities.includes(facility)}
-                        onCheckedChange={(checked) => handleFacilityChange(facility, !!checked)}
+                        onCheckedChange={(checked) => handleFacilityChange(facility, checked as boolean)}
                       />
-                      <Label htmlFor={`facility-${facility}`} className="text-sm">
+                      <label
+                        htmlFor={facility}
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      >
                         {facility}
-                      </Label>
+                      </label>
                     </div>
                   ))}
                 </div>
@@ -1074,86 +1096,78 @@ export default function CreateListingPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>租賃規則</CardTitle>
+                <CardTitle>租屋規則</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-base font-medium">住宿規範</Label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>寵物</Label>
+                    <div className="flex items-center space-x-4">
                       <div className="flex items-center space-x-2">
                         <Checkbox
                           id="pet"
                           checked={formData.pet}
-                          onCheckedChange={(checked) => handleFormChange('pet', !!checked)}
+                          onCheckedChange={(checked) => handleFormChange('pet', checked)}
                         />
-                        <Label htmlFor="pet">可養寵物</Label>
+                        <label
+                          htmlFor="pet"
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          允許養寵物
+                        </label>
                       </div>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>開伙</Label>
+                    <div className="flex items-center space-x-4">
                       <div className="flex items-center space-x-2">
                         <Checkbox
                           id="cooking"
                           checked={formData.cooking}
-                          onCheckedChange={(checked) => handleFormChange('cooking', !!checked)}
+                          onCheckedChange={(checked) => handleFormChange('cooking', checked)}
                         />
-                        <Label htmlFor="cooking">可開伙</Label>
+                        <label
+                          htmlFor="cooking"
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          允許開伙
+                        </label>
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  <Separator />
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-3">
-                      <Label className="text-base font-medium">水費計費方式</Label>
-                      <RadioGroup
-                        value={formData.waterBilling}
-                        onValueChange={(value) => handleFormChange('waterBilling', value)}
-                        className="space-y-2"
-                      >
-                        {BILLING_OPTIONS.map(option => (
-                          <div key={`water-${option.value}`} className="flex items-center space-x-2">
-                            <RadioGroupItem value={option.value} id={`water-${option.value}`} />
-                            <Label htmlFor={`water-${option.value}`} className="text-sm">
-                              {option.label}
-                            </Label>
-                          </div>
-                        ))}
-                      </RadioGroup>
-                    </div>
-
-                    <div className="space-y-3">
-                      <Label className="text-base font-medium">電費計費方式</Label>
-                      <RadioGroup
-                        value={formData.electricityBilling}
-                        onValueChange={(value) => handleFormChange('electricityBilling', value)}
-                        className="space-y-2"
-                      >
-                        {BILLING_OPTIONS.map(option => (
-                          <div key={`electricity-${option.value}`} className="flex items-center space-x-2">
-                            <RadioGroupItem value={option.value} id={`electricity-${option.value}`} />
-                            <Label htmlFor={`electricity-${option.value}`} className="text-sm">
-                              {option.label}
-                            </Label>
-                          </div>
-                        ))}
-                      </RadioGroup>
-                    </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>水費計算</Label>
+                    <RadioGroup
+                      value={formData.waterBilling}
+                      onValueChange={(value) => handleFormChange('waterBilling', value)}
+                    >
+                      {BILLING_OPTIONS.map((option) => (
+                        <div key={option.value} className="flex items-center space-x-2">
+                          <RadioGroupItem value={option.value} id={`water-${option.value}`} />
+                          <label htmlFor={`water-${option.value}`}>{option.label}</label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>電費計算</Label>
+                    <RadioGroup
+                      value={formData.electricityBilling}
+                      onValueChange={(value) => handleFormChange('electricityBilling', value)}
+                    >
+                      {BILLING_OPTIONS.map((option) => (
+                        <div key={option.value} className="flex items-center space-x-2">
+                          <RadioGroupItem value={option.value} id={`electricity-${option.value}`} />
+                          <label htmlFor={`electricity-${option.value}`}>{option.label}</label>
+                        </div>
+                      ))}
+                    </RadioGroup>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>房源描述</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  value={formData.description}
-                  onChange={(e) => handleFormChange('description', e.target.value)}
-                  placeholder="請詳細描述房源特色、周邊環境、交通便利性等..."
-                  rows={4}
-                />
               </CardContent>
             </Card>
 
@@ -1162,68 +1176,66 @@ export default function CreateListingPage() {
                 <CardTitle>房源照片</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <input
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  onChange={(e) => handleImageUpload(e.target.files)}
-                  className="hidden"
-                  id="image-upload"
-                  disabled={uploading}
-                />
-
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {formData.uploadedImages.map((image, index) => (
-                      <div key={image.id} className={`relative group ${deletingImages.has(image.id) ? 'opacity-50' : ''}`}>
-                        <img
-                          src={image.gatewayUrl}
-                          alt={`Preview ${index + 1}`}
-                          className="w-full h-24 object-cover rounded-lg"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement
-                            target.src = `https://indigo-definite-coyote-168.mypinata.cloud/ipfs/${image.ipfsHash}`
-                          }}
-                          loading="lazy"
-                        />
-                        {index === 0 && (
-                          <div className="absolute top-1 left-1 bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded">
-                            主圖
-                          </div>
-                        )}
-                        {deletingImages.has(image.id) && (
-                          <div className="absolute inset-0 bg-black/20 rounded-lg flex items-center justify-center">
-                            <div className="text-xs text-white">刪除中...</div>
-                          </div>
-                        )}
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          className="absolute -top-2 -right-2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => removeImage(index)}
-                          disabled={deletingImages.has(image.id)}
-                        >
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {formData.uploadedImages.map((image, index) => (
+                    <div key={image.id} className="relative group">
+                      <img
+                        src={image.gatewayUrl}
+                        alt={image.filename}
+                        className="w-full h-32 object-cover rounded-lg border"
+                      />
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => handleRemoveImage(index)}
+                        disabled={deletingImages.has(image.id)}
+                      >
+                        {deletingImages.has(image.id) ? (
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        ) : (
                           <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
+                        )}
+                      </Button>
+                      {index === 0 && (
+                        <Badge className="absolute bottom-2 left-2">主圖</Badge>
+                      )}
+                    </div>
+                  ))}
 
-                    {formData.uploadedImages.length < 10 && (
-                      <Label htmlFor="image-upload" className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                        <div className="w-full h-24 border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center hover:border-muted-foreground/50 transition-colors">
-                          <Upload className="h-6 w-6 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground mt-1">
-                            {uploading ? '上傳中...' : '添加照片'}
-                          </span>
-                        </div>
-                      </Label>
-                    )}
-                  </div>
-
-                  <div className="text-xs text-muted-foreground">
-                    已上傳 {formData.uploadedImages.length} / 10 張照片，支援 JPG、PNG 格式
-                  </div>
+                  {formData.uploadedImages.length < 5 && (
+                    <label className="flex flex-col items-center justify-center h-32 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50">
+                      <Upload className="h-8 w-8 text-muted-foreground mb-2" />
+                      <span className="text-sm text-muted-foreground">
+                        {uploading ? '上傳中...' : '上傳照片'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        disabled={uploading}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
                 </div>
+                <div className="text-sm text-muted-foreground">
+                  最多可上傳 5 張照片，每張不超過 5MB
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>詳細說明</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Textarea
+                  value={formData.description}
+                  onChange={(e) => handleFormChange('description', e.target.value)}
+                  placeholder="請描述房源特色、周邊環境、交通便利性等..."
+                  rows={5}
+                />
               </CardContent>
             </Card>
           </div>
@@ -1233,7 +1245,7 @@ export default function CreateListingPage() {
               上一步
             </Button>
             <Button onClick={handleFormSubmit} size="lg">
-              預覽與發布
+              預覽房源
             </Button>
           </div>
         </div>
@@ -1244,147 +1256,97 @@ export default function CreateListingPage() {
           <Alert>
             <CheckCircle className="h-4 w-4" />
             <AlertDescription>
-              預覽房源資訊，確認無誤後即可發布
+              請確認房源資訊無誤後發布
             </AlertDescription>
           </Alert>
 
-          <div className="grid gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>房源預覽</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-muted/50 p-4 rounded-lg">
-                  <div>
-                    <span className="text-muted-foreground text-sm">房產地址</span>
-                    <div className="font-medium">{disclosureStatus?.disclosedData?.address}</div>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground text-sm">建物面積</span>
-                    <div className="font-medium">{disclosureStatus?.disclosedData?.building_area} 坪</div>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground text-sm">使用類型</span>
-                    <div className="font-medium">{disclosureStatus?.disclosedData?.use}</div>
+          <Card>
+            <CardHeader>
+              <CardTitle>房源預覽</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {formData.uploadedImages.length > 0 && (
+                <div className="aspect-video relative rounded-lg overflow-hidden">
+                  <img
+                    src={formData.uploadedImages[0].gatewayUrl}
+                    alt="房源主圖"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+
+              <div>
+                <h3 className="text-2xl font-bold mb-2">{formData.title}</h3>
+                <p className="text-muted-foreground">{disclosureStatus?.disclosedData?.address}</p>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-4 border-y">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-primary">${formData.rent}</div>
+                  <div className="text-sm text-muted-foreground">月租金</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold">{getHouseTypeLabel(formData.type)}</div>
+                  <div className="text-sm text-muted-foreground">房屋類型</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold">{formData.area}坪</div>
+                  <div className="text-sm text-muted-foreground">使用坪數</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold">{formData.floor}F</div>
+                  <div className="text-sm text-muted-foreground">樓層</div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-semibold mb-2">空間配置</h4>
+                  <div className="text-sm text-muted-foreground">
+                    {formData.bedroom}房 {formData.livingroom}廳 {formData.bathroom}衛
+                    {formData.balcony && ' • 含陽台'}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <h4 className="font-semibold mb-3">基本資訊</h4>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">房源標題</span>
-                        <span>{formData.title}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">房屋類型</span>
-                        <span>{getHouseTypeLabel(formData.type)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">室內面積</span>
-                        <span>{formData.area} 坪</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">樓層</span>
-                        <span>{formData.floor} / {formData.totalFloors}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">房間配置</span>
-                        <span>{formData.bedroom}房{formData.bathroom}衛{formData.balcony ? '有陽台' : ''}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="font-semibold mb-3">租金資訊</h4>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">月租金</span>
-                        <span className="font-medium text-primary">${formData.rent.toLocaleString()} USDC</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">押金</span>
-                        <span className="font-medium">${formData.deposit.toLocaleString()} USDC</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">押金月數</span>
-                        <span>{Math.round(formData.deposit / formData.rent * 2) / 2} 個月</span>
-                      </div>
-                    </div>
-                  </div>
+                <div>
+                  <h4 className="font-semibold mb-2">押金</h4>
+                  <div className="text-sm text-muted-foreground">${formData.deposit} USDC</div>
                 </div>
 
                 {formData.facilities.length > 0 && (
                   <div>
-                    <h4 className="font-semibold mb-3">設施設備</h4>
+                    <h4 className="font-semibold mb-2">設備設施</h4>
                     <div className="flex flex-wrap gap-2">
-                      {formData.facilities.map(facility => (
-                        <Badge key={facility} variant="outline">{facility}</Badge>
+                      {formData.facilities.map((facility) => (
+                        <Badge key={facility} variant="secondary">
+                          {facility}
+                        </Badge>
                       ))}
                     </div>
                   </div>
                 )}
 
                 <div>
-                  <h4 className="font-semibold mb-3">租賃規則</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-muted-foreground">寵物：</span>
-                      <span>{formData.pet ? '允許' : '不允許'}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-muted-foreground">開伙：</span>
-                      <span>{formData.cooking ? '允許' : '不允許'}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-muted-foreground">水費：</span>
-                      <span>{getBillingLabel(formData.waterBilling)}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-muted-foreground">電費：</span>
-                      <span>{getBillingLabel(formData.electricityBilling)}</span>
-                    </div>
+                  <h4 className="font-semibold mb-2">租屋規則</h4>
+                  <div className="space-y-1 text-sm text-muted-foreground">
+                    <div>• 寵物：{formData.pet ? '可以' : '不可'}</div>
+                    <div>• 開伙：{formData.cooking ? '可以' : '不可'}</div>
+                    <div>• 水費：{getBillingLabel(formData.waterBilling)}</div>
+                    <div>• 電費：{getBillingLabel(formData.electricityBilling)}</div>
                   </div>
                 </div>
 
                 {formData.description && (
                   <div>
-                    <h4 className="font-semibold mb-3">房源描述</h4>
+                    <h4 className="font-semibold mb-2">詳細說明</h4>
                     <p className="text-sm text-muted-foreground whitespace-pre-line">
                       {formData.description}
                     </p>
                   </div>
                 )}
-
-                {formData.uploadedImages.length > 0 && (
-                  <div>
-                    <h4 className="font-semibold mb-3">房源照片 ({formData.uploadedImages.length}張)</h4>
-                    <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                      {formData.uploadedImages.map((image, index) => (
-                        <div key={image.id} className="relative">
-                          <img
-                            src={image.gatewayUrl}
-                            alt={`Preview ${index + 1}`}
-                            className="w-full h-16 object-cover rounded"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement
-                              target.src = `https://indigo-definite-coyote-168.mypinata.cloud/ipfs/${image.ipfsHash}`
-                            }}
-                          />
-                          {index === 0 && (
-                            <div className="absolute top-0 left-0 bg-primary text-primary-foreground text-xs px-1 rounded-br">
-                              主圖
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="flex justify-center space-x-4">
             <Button variant="outline" onClick={() => handleStepBack('publish')}>
@@ -1392,15 +1354,15 @@ export default function CreateListingPage() {
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button size="lg">
+                <Button size="lg" className="min-w-[120px]">
                   確認發布
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>確認發布房源</AlertDialogTitle>
+                  <AlertDialogTitle>確認發布房源？</AlertDialogTitle>
                   <AlertDialogDescription>
-                    確定要發布這個房源嗎？發布後房源將會在區塊鏈上創建，並向所有用戶開放申請。
+                    發布後房源資訊將公開顯示，您可以隨時下架或編輯房源資訊。
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

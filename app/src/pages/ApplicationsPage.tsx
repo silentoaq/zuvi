@@ -53,6 +53,17 @@ export default function ApplicationsPage() {
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
 
+  const cancelTransaction = useTransaction({
+    onSuccess: async () => {
+      toast.success('申請已成功撤回')
+      fetchApplications()
+      setCancellingId(null)
+    },
+    onError: () => {
+      setCancellingId(null)
+    }
+  })
+
   useEffect(() => {
     fetchApplications()
   }, [])
@@ -95,44 +106,37 @@ export default function ApplicationsPage() {
       const { transaction: serializedTx, cleanup } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
       
-      const { executeTransaction } = useTransaction({
-        onSuccess: async () => {
-          toast.success('申請已成功撤回')
-          fetchApplications()
-          setCancellingId(null)
-          
-          if (cleanup?.messageIpfsHash) {
-            try {
-              await fetch('/api/cleanup/transaction-failed', {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  ipfsHashes: [cleanup.messageIpfsHash]
-                })
-              })
-            } catch (cleanupError) {
-              console.error('Cleanup failed:', cleanupError)
-            }
-          }
-        },
-        onError: () => {
-          setCancellingId(null)
-        },
-        cleanupInfo: cleanup ? {
-          messageIpfsHash: cleanup.messageIpfsHash
-        } : undefined
-      })
+      if (cleanup?.messageIpfsHash) {
+        cancelTransaction.updateCleanupInfo({
+          ipfsHashes: [cleanup.messageIpfsHash]
+        })
+      }
       
-      await executeTransaction(tx)
+      await cancelTransaction.executeTransaction(tx)
+      
+      if (cleanup?.messageIpfsHash) {
+        try {
+          await fetch('/api/cleanup/transaction-failed', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              ipfsHashes: [cleanup.messageIpfsHash]
+            })
+          })
+        } catch (cleanupError) {
+          console.error('Cleanup succeeded after transaction:', cleanupError)
+        }
+      }
+      
     } catch (error) {
       console.error('Error cancelling application:', error)
       toast.error(error instanceof Error ? error.message : '撤回申請失敗')
       setCancellingId(null)
     }
-  }, [])
+  }, [cancelTransaction])
 
   const toggleExpanded = (applicationId: string) => {
     const newExpanded = new Set(expandedCards)
@@ -403,39 +407,34 @@ function ApplicationCard({
                   size="sm"
                   disabled={isCancelling}
                 >
-                  {isCancelling ? '撤回中...' : <><X className="h-4 w-4 mr-2" />撤回申請</>}
+                  {isCancelling ? (
+                    <>
+                      <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                      撤回中...
+                    </>
+                  ) : (
+                    <>
+                      <X className="h-4 w-4 mr-2" />
+                      撤回申請
+                    </>
+                  )}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>確認撤回申請</AlertDialogTitle>
                   <AlertDialogDescription>
-                    確定要撤回這個租賃申請嗎？撤回後您需要重新提交申請。
+                    撤回申請後將無法復原，確定要撤回這個申請嗎？
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>取消</AlertDialogCancel>
-                  <AlertDialogAction 
-                    onClick={() => onCancel(application.publicKey)}
-                    disabled={isCancelling}
-                  >
+                  <AlertDialogAction onClick={() => onCancel(application.publicKey)}>
                     確認撤回
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-          )}
-          
-          {application.status === 1 && (
-            <div className="text-sm text-green-600">
-              ✓ 申請已獲核准，等待房東創建租約
-            </div>
-          )}
-          
-          {application.status === 2 && (
-            <div className="text-sm text-red-600">
-              ✗ 申請已被拒絕
-            </div>
           )}
         </div>
       </CardContent>

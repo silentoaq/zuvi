@@ -101,6 +101,7 @@ export default function ApplyPage() {
   const [disclosureStatus, setDisclosureStatus] = useState<DisclosureStatus | null>(null)
   const [processing, setProcessing] = useState(false)
   const [cleanupInfo, setCleanupInfo] = useState<{ ipfsHash?: string } | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const [formData, setFormData] = useState<ApplicationFormData>({
     occupation: '',
@@ -113,6 +114,7 @@ export default function ApplyPage() {
   const citizenCredential = user?.credentialStatus?.twfido
 
   const submitTransaction = useTransaction({
+    maxRetries: 0,
     onSuccess: () => {
       toast.success('申請提交成功！')
       setTimeout(() => {
@@ -340,10 +342,16 @@ export default function ApplyPage() {
   }
 
   const handleSubmitApplication = useCallback(async () => {
+    if (isSubmitting || submitTransaction.isLoading) {
+      return
+    }
+
     if (!listing || !selectedCredential || !disclosureStatus?.disclosedData) {
       toast.error('缺少必要資訊，請重新開始')
       return
     }
+
+    setIsSubmitting(true)
 
     try {
       const applicationData = {
@@ -396,7 +404,9 @@ export default function ApplyPage() {
 
     } catch (error) {
       console.error('Error submitting application:', error)
-      toast.error(error instanceof Error ? error.message : '提交申請失敗，請稍後再試')
+      toast.error(error instanceof Error ? error.message : '申請提交失敗')
+    } finally {
+      setIsSubmitting(false)
     }
   }, [listing, selectedCredential, disclosureStatus, formData, submitTransaction])
 
@@ -893,9 +903,9 @@ export default function ApplyPage() {
             </Button>
             <Button
               onClick={handleSubmitApplication}
-              disabled={submitTransaction.isLoading}
+              disabled={isSubmitting || submitTransaction.isLoading}
             >
-              {submitTransaction.isLoading ? '提交中...' : '提交申請'}
+              {(isSubmitting || submitTransaction.isLoading) ? '提交中...' : '提交申請'}
             </Button>
           </div>
         </div>

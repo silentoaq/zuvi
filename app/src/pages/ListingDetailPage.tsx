@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { MapPin, Bed, Home, Building } from 'lucide-react'
+import { MapPin, Bed, Bath, Home, Building, Sofa } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -183,12 +183,28 @@ export default function ListingDetailPage() {
             )}
 
             <div className="flex items-center space-x-6">
-              <div className="flex items-center text-muted-foreground">
-                <Bed className="h-5 w-5 mr-2" />
-                {listing.metadata?.features?.bedroom || 1}房
-                {(listing.metadata?.features?.livingroom || 0) > 0 && `${listing.metadata?.features?.livingroom}廳`}
-                {listing.metadata?.features?.bathroom || 1}衛
-                {listing.metadata?.features?.balcony && <span className="ml-1">+陽台</span>}
+              <div className="flex items-center space-x-4">
+                {(listing.metadata?.features?.bedroom || 0) > 0 && (
+                  <div className="flex items-center text-muted-foreground">
+                    <Bed className="h-5 w-5 mr-2" />
+                    {listing.metadata?.features?.bedroom}房
+                  </div>
+                )}
+                {(listing.metadata?.features?.livingroom || 0) > 0 && (
+                  <div className="flex items-center text-muted-foreground">
+                    <Sofa className="h-5 w-5 mr-2" />
+                    {listing.metadata?.features?.livingroom}廳
+                  </div>
+                )}
+                {(listing.metadata?.features?.bathroom || 0) > 0 && (
+                  <div className="flex items-center text-muted-foreground">
+                    <Bath className="h-5 w-5 mr-2" />
+                    {listing.metadata?.features?.bathroom}衛
+                  </div>
+                )}
+                {listing.metadata?.features?.balcony && (
+                  <Badge variant="secondary">陽台</Badge>
+                )}
               </div>
               <div className="flex items-center text-muted-foreground">
                 <Home className="h-5 w-5 mr-2" />

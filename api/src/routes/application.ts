@@ -56,7 +56,7 @@ router.post('/apply', requireCitizenCredential, async (req: AuthRequest, res, ne
     const { blockhash } = await program.provider.connection.getLatestBlockhash();
     tx.recentBlockhash = blockhash;
     tx.feePayer = userPublicKey;
-    
+
     tx.partialSign(apiSignerWallet.payer);
 
     const serialized = tx.serialize({
@@ -163,8 +163,17 @@ router.get('/listing/:listing', async (req: AuthRequest, res, next) => {
     const enriched = await Promise.all(
       applications.map(async (app) => {
         const ipfsHash = StorageService.bytesToIpfsHash(app.account.messageUri);
-        const message = await StorageService.getJSON(ipfsHash);
-        
+        let message = null;
+
+        try {
+          message = await StorageService.getJSON(ipfsHash);
+        } catch (error) {
+          message = {
+            error: 'Unable to fetch application details',
+            ipfsHash
+          };
+        }
+
         return {
           publicKey: app.publicKey.toString(),
           applicant: app.account.applicant.toString(),
@@ -203,10 +212,27 @@ router.get('/my', async (req: AuthRequest, res, next) => {
       applications.map(async (app) => {
         const listing = await program.account.listing.fetch(app.account.listing);
         const listingIpfsHash = StorageService.bytesToIpfsHash(listing.metadataUri);
-        const listingMetadata = await StorageService.getJSON(listingIpfsHash);
+
+        let listingMetadata = null;
+        try {
+          listingMetadata = await StorageService.getJSON(listingIpfsHash);
+        } catch (error) {
+          console.error(`Failed to fetch listing metadata:`, error);
+          listingMetadata = { error: 'Unable to fetch listing details' };
+        }
 
         const appIpfsHash = StorageService.bytesToIpfsHash(app.account.messageUri);
-        const message = await StorageService.getJSON(appIpfsHash);
+        let message = null;
+
+        try {
+          message = await StorageService.getJSON(appIpfsHash);
+        } catch (error) {
+          console.error(`Failed to fetch application message:`, error);
+          message = {
+            error: 'Unable to fetch application details',
+            ipfsHash: appIpfsHash
+          };
+        }
 
         return {
           publicKey: app.publicKey.toString(),

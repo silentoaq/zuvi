@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { MapPin, Bed, Bath, Home, Search } from 'lucide-react'
+import { MapPin, Bed, Bath, Home, Search, Sofa } from 'lucide-react'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -174,14 +174,24 @@ export default function HomePage() {
 
                 {listing.metadata?.features && (
                   <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                    <div className="flex items-center">
-                      <Bed className="h-4 w-4 mr-1" />
-                      {listing.metadata?.features?.bedroom || 1}房{(listing.metadata?.features?.livingroom || 0) > 0 && `${listing.metadata?.features?.livingroom}廳`}
-                    </div>
-                    <div className="flex items-center">
-                      <Bath className="h-4 w-4 mr-1" />
-                      {listing.metadata?.features?.bathroom || 1}衛
-                    </div>
+                    {(listing.metadata.features.bedroom || 0) > 0 && (
+                      <div className="flex items-center">
+                        <Bed className="h-4 w-4 mr-1" />
+                        {listing.metadata.features.bedroom}房
+                      </div>
+                    )}
+                    {(listing.metadata.features.livingroom || 0) > 0 && (
+                      <div className="flex items-center">
+                        <Sofa className="h-4 w-4 mr-1" />
+                        {listing.metadata.features.livingroom}廳
+                      </div>
+                    )}
+                    {(listing.metadata.features.bathroom || 0) > 0 && (
+                      <div className="flex items-center">
+                        <Bath className="h-4 w-4 mr-1" />
+                        {listing.metadata.features.bathroom}衛
+                      </div>
+                    )}
                     <div className="flex items-center">
                       <Home className="h-4 w-4 mr-1" />
                       {listing.metadata?.basic?.area || 0}坪

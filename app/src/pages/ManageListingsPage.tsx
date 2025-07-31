@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Transaction } from '@solana/web3.js'
-import { MapPin, Bed, Bath, Home, Edit, Eye, Users, Upload, X, Check, XCircle } from 'lucide-react'
+import { MapPin, Bed, Bath, Home, Edit, Eye, Users, Upload, X, Check, XCircle, Sofa } from 'lucide-react'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -118,10 +118,10 @@ export default function ManageListingsPage() {
   const [applications, setApplications] = useState<Record<string, Application[]>>({})
   const [uploading, setUploading] = useState(false)
   const [currentViewingListing, setCurrentViewingListing] = useState<string | null>(null)
+  const [toggleLoadingStates, setToggleLoadingStates] = useState<Record<string, boolean>>({})
 
   const {
-    executeTransaction: executeToggle,
-    isLoading: isToggling
+    executeTransaction: executeToggle
   } = useTransaction({
     onSuccess: () => {
       toast.success('房源狀態更新成功')
@@ -214,6 +214,12 @@ export default function ManageListingsPage() {
   }, [executeApplicationAction])
 
   const toggleListingStatus = useCallback(async (listing: Listing) => {
+    if (toggleLoadingStates[listing.publicKey]) {
+      return
+    }
+
+    setToggleLoadingStates(prev => ({ ...prev, [listing.publicKey]: true }))
+
     try {
       const response = await fetch(`/api/listings/${listing.publicKey}/toggle`, {
         method: 'POST',
@@ -232,8 +238,10 @@ export default function ManageListingsPage() {
     } catch (error) {
       console.error('Error toggling listing:', error)
       toast.error('操作失敗')
+    } finally {
+      setToggleLoadingStates(prev => ({ ...prev, [listing.publicKey]: false }))
     }
-  }, [executeToggle])
+  }, [executeToggle, toggleLoadingStates])
 
   const startEdit = (listing: Listing) => {
     setEditingListing(listing)
@@ -586,15 +594,25 @@ export default function ManageListingsPage() {
                     <span className="line-clamp-1">{listing.address}</span>
                   </div>
                   {listing.metadata?.features && (
-                    <div className="flex items-center space-x-3">
-                      <div className="flex items-center">
-                        <Bed className="h-3 w-3 mr-1" />
-                        <span>{listing.metadata.features.bedroom}</span>
-                      </div>
-                      <div className="flex items-center">
-                        <Bath className="h-3 w-3 mr-1" />
-                        <span>{listing.metadata.features.bathroom}</span>
-                      </div>
+                    <div className="flex items-center space-x-3 text-sm text-muted-foreground">
+                      {(listing.metadata.features.bedroom || 0) > 0 && (
+                        <div className="flex items-center">
+                          <Bed className="h-4 w-4 mr-1" />
+                          {listing.metadata.features.bedroom}房
+                        </div>
+                      )}
+                      {(listing.metadata.features.livingroom || 0) > 0 && (
+                        <div className="flex items-center">
+                          <Sofa className="h-4 w-4 mr-1" />
+                          {listing.metadata.features.livingroom}廳
+                        </div>
+                      )}
+                      {(listing.metadata.features.bathroom || 0) > 0 && (
+                        <div className="flex items-center">
+                          <Bath className="h-4 w-4 mr-1" />
+                          {listing.metadata.features.bathroom}衛
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -622,12 +640,14 @@ export default function ManageListingsPage() {
                   </Button>
 
                   <Button
+                    variant={listing.status === 0 ? "destructive" : "default"}
+                    size="sm"
                     onClick={() => toggleListingStatus(listing)}
-                    disabled={isToggling}
+                    disabled={toggleLoadingStates[listing.publicKey] || false}
                   >
-                    {isToggling ? '處理中...' : (listing.status === 0 ? '下架' : '上架')}
+                    {toggleLoadingStates[listing.publicKey] ? '處理中...' : (listing.status === 0 ? '下架' : '上架')}
                   </Button>
-                  
+
                   <Button
                     variant="outline"
                     size="sm"

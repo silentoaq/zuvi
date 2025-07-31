@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Copy, CheckCircle, Clock, Building, Eye, EyeOff, Upload, X } from 'lucide-react'
+import { Copy, CheckCircle, Clock, Building, Eye, EyeOff, Upload, X, Bed, Bath, Sofa } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -135,7 +135,7 @@ export default function CreateListingPage() {
     onError: async () => {
       await clearAllTempImages()
       setFormData(prev => ({ ...prev, uploadedImages: [] }))
-      
+
       if (cleanupInfo?.metadataHash || cleanupInfo?.imageHashes) {
         try {
           await fetch('/api/cleanup/transaction-failed', {
@@ -364,7 +364,7 @@ export default function CreateListingPage() {
     if (!e.target.files || e.target.files.length === 0) return
 
     const file = e.target.files[0]
-    
+
     if (!file.type.startsWith('image/')) {
       toast.error('請選擇圖片檔案')
       return
@@ -393,7 +393,7 @@ export default function CreateListingPage() {
       }
 
       const data = await response.json()
-      
+
       // API 返回 images 陣列，取第一個
       if (data.images && data.images.length > 0) {
         setFormData(prev => ({
@@ -568,7 +568,7 @@ export default function CreateListingPage() {
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
 
       setCleanupInfo(cleanup || null)
-      
+
       if (cleanup) {
         publishTransaction.updateCleanupInfo({
           metadataHash: cleanup.metadataHash,
@@ -1302,9 +1302,28 @@ export default function CreateListingPage() {
               <div className="space-y-4">
                 <div>
                   <h4 className="font-semibold mb-2">空間配置</h4>
-                  <div className="text-sm text-muted-foreground">
-                    {formData.bedroom}房 {formData.livingroom}廳 {formData.bathroom}衛
-                    {formData.balcony && ' • 含陽台'}
+                  <div className="flex items-center space-x-3 text-sm text-muted-foreground">
+                    {formData.bedroom > 0 && (
+                      <div className="flex items-center">
+                        <Bed className="h-4 w-4 mr-1" />
+                        {formData.bedroom}房
+                      </div>
+                    )}
+                    {formData.livingroom > 0 && (
+                      <div className="flex items-center">
+                        <Sofa className="h-4 w-4 mr-1" />
+                        {formData.livingroom}廳
+                      </div>
+                    )}
+                    {formData.bathroom > 0 && (
+                      <div className="flex items-center">
+                        <Bath className="h-4 w-4 mr-1" />
+                        {formData.bathroom}衛
+                      </div>
+                    )}
+                    {formData.balcony && (
+                      <Badge variant="secondary" className="ml-2">陽台</Badge>
+                    )}
                   </div>
                 </div>
 

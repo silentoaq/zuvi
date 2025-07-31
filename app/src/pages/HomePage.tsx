@@ -28,6 +28,7 @@ interface Listing {
     }
     features?: {
       bedroom: number
+      livingroom: number
       bathroom: number
       balcony: boolean
     }
@@ -55,7 +56,7 @@ export default function HomePage() {
       setLoading(true)
       const token = localStorage.getItem('zuvi-auth-token')
       const headers: HeadersInit = {}
-      
+
       if (token) {
         headers['Authorization'] = `Bearer ${token}`
       }
@@ -63,7 +64,7 @@ export default function HomePage() {
       const response = await fetch(`/api/listings?status=${filterStatus}&sort=${sortBy}`, {
         headers
       })
-      
+
       if (response.ok) {
         const data = await response.json()
         setListings(data.listings || [])
@@ -101,7 +102,7 @@ export default function HomePage() {
             className="pl-10"
           />
         </div>
-        
+
         <Select value={sortBy} onValueChange={setSortBy}>
           <SelectTrigger className="w-32">
             <SelectValue />
@@ -160,36 +161,34 @@ export default function HomePage() {
                   </Badge>
                 </div>
               </div>
-              
+
               <CardContent className="p-4 space-y-3">
                 <h3 className="font-semibold text-lg truncate">
                   {listing.metadata?.basic?.title || '房源'}
                 </h3>
-                
+
                 <div className="flex items-center text-muted-foreground text-sm">
                   <MapPin className="h-4 w-4 mr-1 flex-shrink-0" />
                   <span className="truncate">{listing.address}</span>
                 </div>
-                
+
                 {listing.metadata?.features && (
                   <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                     <div className="flex items-center">
                       <Bed className="h-4 w-4 mr-1" />
-                      <span>{listing.metadata.features.bedroom}房</span>
+                      {listing.metadata?.features?.bedroom || 1}房{(listing.metadata?.features?.livingroom || 0) > 0 && `${listing.metadata?.features?.livingroom}廳`}
                     </div>
                     <div className="flex items-center">
                       <Bath className="h-4 w-4 mr-1" />
-                      <span>{listing.metadata.features.bathroom}衛</span>
+                      {listing.metadata?.features?.bathroom || 1}衛
                     </div>
-                    {listing.metadata?.basic?.area && (
-                      <div className="flex items-center">
-                        <Home className="h-4 w-4 mr-1" />
-                        <span>{listing.metadata.basic.area}坪</span>
-                      </div>
-                    )}
+                    <div className="flex items-center">
+                      <Home className="h-4 w-4 mr-1" />
+                      {listing.metadata?.basic?.area || 0}坪
+                    </div>
                   </div>
                 )}
-                
+
                 <div className="space-y-1">
                   <div className="text-2xl font-bold text-primary">
                     ${formatPrice(listing.rent)} USDC
@@ -199,7 +198,7 @@ export default function HomePage() {
                   </div>
                 </div>
               </CardContent>
-              
+
               <CardFooter className="p-4 pt-0">
                 <Button asChild className="w-full">
                   <Link to={`/listing/${listing.publicKey}`}>

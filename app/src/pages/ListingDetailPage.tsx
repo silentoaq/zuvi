@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { MapPin, Bed, Bath, Home } from 'lucide-react'
+import { MapPin, Bed, Home, Building } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,7 @@ interface Listing {
     }
     features?: {
       bedroom: number
+      livingroom: number
       bathroom: number
       balcony: boolean
     }
@@ -84,9 +85,9 @@ export default function ListingDetailPage() {
   }
 
   const canApply = () => {
-    return listing?.status === 0 && 
-           user?.credentialStatus?.twfido?.exists &&
-           listing.owner !== user.publicKey
+    return listing?.status === 0 &&
+      user?.credentialStatus?.twfido?.exists &&
+      listing.owner !== user.publicKey
   }
 
   if (loading) {
@@ -168,7 +169,7 @@ export default function ListingDetailPage() {
                 {listing.status === 0 ? "可租" : "已租"}
               </Badge>
             </div>
-            
+
             <div className="flex items-center text-muted-foreground mb-4">
               <MapPin className="h-5 w-5 mr-2" />
               <span>{listing.address}</span>
@@ -181,25 +182,22 @@ export default function ListingDetailPage() {
               </div>
             )}
 
-            <div className="flex items-center space-x-6 text-lg">
-              {listing.metadata?.features && (
-                <>
-                  <div className="flex items-center">
-                    <Bed className="h-5 w-5 mr-2" />
-                    <span>{listing.metadata.features.bedroom} 房</span>
-                  </div>
-                  <div className="flex items-center">
-                    <Bath className="h-5 w-5 mr-2" />
-                    <span>{listing.metadata.features.bathroom} 衛</span>
-                  </div>
-                </>
-              )}
-              {listing.metadata?.basic?.area && (
-                <div className="flex items-center">
-                  <Home className="h-5 w-5 mr-2" />
-                  <span>{listing.metadata.basic.area} 坪</span>
-                </div>
-              )}
+            <div className="flex items-center space-x-6">
+              <div className="flex items-center text-muted-foreground">
+                <Bed className="h-5 w-5 mr-2" />
+                {listing.metadata?.features?.bedroom || 1}房
+                {(listing.metadata?.features?.livingroom || 0) > 0 && `${listing.metadata?.features?.livingroom}廳`}
+                {listing.metadata?.features?.bathroom || 1}衛
+                {listing.metadata?.features?.balcony && <span className="ml-1">+陽台</span>}
+              </div>
+              <div className="flex items-center text-muted-foreground">
+                <Home className="h-5 w-5 mr-2" />
+                {listing.metadata?.basic?.area || 0}坪
+              </div>
+              <div className="flex items-center text-muted-foreground">
+                <Building className="h-5 w-5 mr-2" />
+                第{listing.metadata?.basic?.floor || 1}層
+              </div>
             </div>
           </div>
 
@@ -257,9 +255,9 @@ export default function ListingDetailPage() {
                   ${formatPrice(listing.deposit)} USDC
                 </span>
               </div>
-              
+
               <Separator />
-              
+
               {canApply() ? (
                 <Button asChild className="w-full">
                   <Link to={`/apply/${listing.publicKey}`}>

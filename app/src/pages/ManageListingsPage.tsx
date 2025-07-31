@@ -33,6 +33,7 @@ interface Listing {
     }
     features?: {
       bedroom: number
+      livingroom: number,
       bathroom: number
       balcony: boolean
     }
@@ -76,6 +77,7 @@ interface EditFormData {
   floor: number
   totalFloors: number
   bedroom: number
+  livingroom: number
   bathroom: number
   balcony: boolean
   rent: number
@@ -108,7 +110,7 @@ const BILLING_OPTIONS = [
 
 export default function ManageListingsPage() {
   const { user } = useAuthStore()
-  
+
   const [listings, setListings] = useState<Listing[]>([])
   const [loading, setLoading] = useState(true)
   const [editingListing, setEditingListing] = useState<Listing | null>(null)
@@ -151,7 +153,7 @@ export default function ManageListingsPage() {
           'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
         }
       })
-      
+
       if (response.ok) {
         const data = await response.json()
         setListings(data.listings || [])
@@ -171,7 +173,7 @@ export default function ManageListingsPage() {
           'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
         }
       })
-      
+
       if (response.ok) {
         const data = await response.json()
         setApplications(prev => ({
@@ -201,7 +203,7 @@ export default function ManageListingsPage() {
 
       const { transaction: serializedTx } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
-      
+
       await executeApplicationAction(tx)
     } catch (error) {
       console.error(`Error ${action}ing application:`, error)
@@ -223,7 +225,7 @@ export default function ManageListingsPage() {
 
       const { transaction: serializedTx } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
-      
+
       await executeToggle(tx)
     } catch (error) {
       console.error('Error toggling listing:', error)
@@ -233,7 +235,7 @@ export default function ManageListingsPage() {
 
   const startEdit = (listing: Listing) => {
     setEditingListing(listing)
-    
+
     const existingImages: UploadedImage[] = listing.metadata?.media?.images?.map((ipfsHash, index) => ({
       id: `existing-${index}`,
       filename: `image-${index + 1}.jpg`,
@@ -249,6 +251,7 @@ export default function ManageListingsPage() {
       floor: listing.metadata?.basic?.floor || 1,
       totalFloors: listing.metadata?.basic?.total_floors || 1,
       bedroom: listing.metadata?.features?.bedroom || 1,
+      livingroom: listing.metadata?.features?.livingroom || 0,
       bathroom: listing.metadata?.features?.bathroom || 1,
       balcony: listing.metadata?.features?.balcony || false,
       rent: parseInt(listing.rent) / 1_000_000,
@@ -266,15 +269,15 @@ export default function ManageListingsPage() {
 
   const handleImageUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return
-    
+
     const newImages = Array.from(files).filter(file => file.type.startsWith('image/'))
     const totalImages = editFormData!.existingImages.length + editFormData!.uploadedImages.length + newImages.length
-    
+
     if (totalImages > 10) {
       toast.error('最多只能有10張照片')
       return
     }
-    
+
     try {
       setUploading(true)
       const formData = new FormData()
@@ -297,7 +300,7 @@ export default function ManageListingsPage() {
         ...prev!,
         uploadedImages: [...prev!.uploadedImages, ...images]
       }))
-      
+
       toast.success(`成功上傳 ${images.length} 張照片`)
     } catch (error) {
       console.error('Error uploading images:', error)
@@ -309,7 +312,7 @@ export default function ManageListingsPage() {
 
   const removeUploadedImage = async (index: number) => {
     const imageToRemove = editFormData!.uploadedImages[index]
-    
+
     setEditFormData(prev => ({
       ...prev!,
       uploadedImages: prev!.uploadedImages.filter((_, i) => i !== index)
@@ -339,7 +342,7 @@ export default function ManageListingsPage() {
 
     try {
       const allImages = [...editFormData.existingImages, ...editFormData.uploadedImages]
-      
+
       const metadata = {
         version: '1.0',
         basic: {
@@ -351,6 +354,7 @@ export default function ManageListingsPage() {
         },
         features: {
           bedroom: editFormData.bedroom,
+          livingroom: editFormData.livingroom,
           bathroom: editFormData.bathroom,
           balcony: editFormData.balcony
         },
@@ -371,26 +375,44 @@ export default function ManageListingsPage() {
       }
 
       const requestBody: any = {}
-      
+
       const currentRent = parseInt(editingListing.rent) / 1_000_000
       const currentDeposit = parseInt(editingListing.deposit) / 1_000_000
-      
+
       if (editFormData.rent !== currentRent) {
         requestBody.rent = editFormData.rent * 1_000_000
       }
-      
+
       if (editFormData.deposit !== currentDeposit) {
         requestBody.deposit = editFormData.deposit * 1_000_000
       }
 
-      const hasImageChanges = 
-        editFormData.uploadedImages.length > 0 || 
+      const hasImageChanges =
+        editFormData.uploadedImages.length > 0 ||
         editFormData.existingImages.length !== (editingListing.metadata?.media?.images?.length || 0) ||
-        !editFormData.existingImages.every((img, index) => 
+        !editFormData.existingImages.every((img, index) =>
           img.ipfsHash === editingListing.metadata?.media?.images?.[index]
         )
 
-      if (hasImageChanges || JSON.stringify(metadata) !== JSON.stringify(editingListing.metadata)) {
+      const hasMetadataChanges = (
+        editFormData.title !== (editingListing.metadata?.basic?.title || '') ||
+        editFormData.type !== getTypeValue(editingListing.metadata?.basic?.type || '') ||
+        editFormData.area !== (editingListing.metadata?.basic?.area || 0) ||
+        editFormData.floor !== (editingListing.metadata?.basic?.floor || 1) ||
+        editFormData.totalFloors !== (editingListing.metadata?.basic?.total_floors || 1) ||
+        editFormData.bedroom !== (editingListing.metadata?.features?.bedroom || 1) ||
+        editFormData.livingroom !== (editingListing.metadata?.features?.livingroom || 1) ||
+        editFormData.bathroom !== (editingListing.metadata?.features?.bathroom || 1) ||
+        editFormData.balcony !== (editingListing.metadata?.features?.balcony || false) ||
+        JSON.stringify(editFormData.facilities.sort()) !== JSON.stringify((editingListing.metadata?.facilities || []).sort()) ||
+        editFormData.pet !== (editingListing.metadata?.rules?.pet || false) ||
+        editFormData.cooking !== (editingListing.metadata?.rules?.cooking || false) ||
+        editFormData.waterBilling !== getBillingValue(editingListing.metadata?.rules?.utilities?.water || '') ||
+        editFormData.electricityBilling !== getBillingValue(editingListing.metadata?.rules?.utilities?.electricity || '') ||
+        editFormData.description !== (editingListing.metadata?.description || '')
+      )
+
+      if (hasImageChanges || hasMetadataChanges) {
         requestBody.metadata = metadata
         requestBody.imageIds = editFormData.uploadedImages.map(img => img.id)
       }
@@ -416,20 +438,20 @@ export default function ManageListingsPage() {
 
       const { transaction: serializedTx, cleanup } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
-      
+
       const { executeTransaction } = useTransaction({
         onSuccess: async () => {
           toast.success('房源更新成功')
           setEditingListing(null)
           setEditFormData(null)
           fetchMyListings()
-          
+
           if (cleanup && (cleanup.oldMetadataHash || cleanup.removedImageHashes?.length)) {
             try {
               const ipfsHashes = []
               if (cleanup.oldMetadataHash) ipfsHashes.push(cleanup.oldMetadataHash)
               if (cleanup.removedImageHashes?.length) ipfsHashes.push(...cleanup.removedImageHashes)
-              
+
               await fetch('/api/cleanup/transaction-failed', {
                 method: 'POST',
                 headers: {
@@ -450,7 +472,7 @@ export default function ManageListingsPage() {
           removedImageHashes: cleanup.removedImageHashes
         } : undefined
       })
-      
+
       await executeTransaction(tx)
 
     } catch (error) {
@@ -559,12 +581,12 @@ export default function ManageListingsPage() {
                 <h3 className="font-semibold text-lg truncate">
                   {listing.metadata?.basic?.title || '房源'}
                 </h3>
-                
+
                 <div className="flex items-center text-muted-foreground text-sm">
                   <MapPin className="h-4 w-4 mr-1 flex-shrink-0" />
                   <span className="truncate">{listing.address}</span>
                 </div>
-                
+
                 {listing.metadata?.features && (
                   <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                     <div className="flex items-center">
@@ -583,7 +605,7 @@ export default function ManageListingsPage() {
                     )}
                   </div>
                 )}
-                
+
                 <div className="space-y-1">
                   <div className="text-xl font-bold text-primary">
                     ${formatPrice(listing.rent)} USDC
@@ -605,7 +627,7 @@ export default function ManageListingsPage() {
                     <Edit className="h-4 w-4 mr-2" />
                     編輯
                   </Button>
-                  
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -625,7 +647,7 @@ export default function ManageListingsPage() {
                       預覽
                     </a>
                   </Button>
-                  
+
                   <Dialog>
                     <DialogTrigger asChild>
                       <Button
@@ -663,7 +685,7 @@ export default function ManageListingsPage() {
                                       </div>
                                       {getApplicationStatusBadge(app.status)}
                                     </div>
-                                    
+
                                     {app.message && (
                                       <div className="border-t pt-3">
                                         {app.message.applicant && (
@@ -686,7 +708,7 @@ export default function ManageListingsPage() {
                                         )}
                                       </div>
                                     )}
-                                    
+
                                     {app.status === 0 && (
                                       <div className="flex gap-2 pt-2 border-t">
                                         <Button
@@ -821,6 +843,16 @@ export default function ManageListingsPage() {
                     />
                   </div>
                   <div className="space-y-2">
+                    <Label htmlFor="livingroom">客廳數</Label>
+                    <Input
+                      id="livingroom"
+                      type="number"
+                      value={editFormData.livingroom}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev!, livingroom: parseInt(e.target.value) || 0 }))}
+                      min="0"
+                    />
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="bathroom">衛浴數</Label>
                     <Input
                       id="bathroom"
@@ -829,16 +861,13 @@ export default function ManageListingsPage() {
                       onChange={(e) => setEditFormData(prev => ({ ...prev!, bathroom: parseInt(e.target.value) || 1 }))}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>陽台</Label>
-                    <div className="flex items-center space-x-2 mt-2">
-                      <Checkbox
-                        id="balcony"
-                        checked={editFormData.balcony}
-                        onCheckedChange={(checked) => setEditFormData(prev => ({ ...prev!, balcony: !!checked }))}
-                      />
-                      <Label htmlFor="balcony">有陽台</Label>
-                    </div>
+                  <div className="flex items-center space-x-2 pt-6">
+                    <Checkbox
+                      id="balcony"
+                      checked={editFormData.balcony}
+                      onCheckedChange={(checked) => setEditFormData(prev => ({ ...prev!, balcony: !!checked }))}
+                    />
+                    <Label htmlFor="balcony">陽台</Label>
                   </div>
                 </div>
 
@@ -938,8 +967,8 @@ export default function ManageListingsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-3">
                       <Label className="text-base font-medium">水費計費方式</Label>
-                      <RadioGroup 
-                        value={editFormData.waterBilling} 
+                      <RadioGroup
+                        value={editFormData.waterBilling}
                         onValueChange={(value) => setEditFormData(prev => ({ ...prev!, waterBilling: value }))}
                         className="space-y-2"
                       >
@@ -956,8 +985,8 @@ export default function ManageListingsPage() {
 
                     <div className="space-y-3">
                       <Label className="text-base font-medium">電費計費方式</Label>
-                      <RadioGroup 
-                        value={editFormData.electricityBilling} 
+                      <RadioGroup
+                        value={editFormData.electricityBilling}
                         onValueChange={(value) => setEditFormData(prev => ({ ...prev!, electricityBilling: value }))}
                         className="space-y-2"
                       >
@@ -978,7 +1007,7 @@ export default function ManageListingsPage() {
               <TabsContent value="images" className="space-y-4">
                 <div>
                   <Label className="text-base font-medium">房源照片</Label>
-                  
+
                   <div className="space-y-6 mt-3">
                     {editFormData.existingImages.length > 0 && (
                       <div>
@@ -1050,7 +1079,7 @@ export default function ManageListingsPage() {
                         id="image-upload"
                         disabled={uploading}
                       />
-                      
+
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {(editFormData.existingImages.length + editFormData.uploadedImages.length) < 10 && (
                           <Label htmlFor="image-upload" className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
@@ -1063,7 +1092,7 @@ export default function ManageListingsPage() {
                           </Label>
                         )}
                       </div>
-                      
+
                       <div className="text-xs text-muted-foreground mt-2">
                         已有 {editFormData.existingImages.length + editFormData.uploadedImages.length} / 10 張照片
                       </div>

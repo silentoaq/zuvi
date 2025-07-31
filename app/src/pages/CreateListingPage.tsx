@@ -51,6 +51,7 @@ interface ListingFormData {
   floor: number
   totalFloors: number
   bedroom: number
+  livingroom: number
   bathroom: number
   balcony: boolean
   rent: number
@@ -87,7 +88,7 @@ const BILLING_OPTIONS = [
 
 export default function CreateListingPage() {
   const { user } = useAuthStore()
-  
+
   const [selectedCredential, setSelectedCredential] = useState<PropertyCredential | null>(null)
   const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set())
   const [disclosureStep, setDisclosureStep] = useState<'select' | 'waiting' | 'completed' | 'form' | 'publish'>('select')
@@ -98,7 +99,7 @@ export default function CreateListingPage() {
   const [uploading, setUploading] = useState(false)
   const [existingListings, setExistingListings] = useState<ExistingListing[]>([])
   const [loadingExistingListings, setLoadingExistingListings] = useState(true)
-  
+
   const [formData, setFormData] = useState<ListingFormData>({
     title: '',
     type: '',
@@ -106,6 +107,7 @@ export default function CreateListingPage() {
     floor: 1,
     totalFloors: 1,
     bedroom: 1,
+    livingroom: 0,
     bathroom: 1,
     balcony: false,
     rent: 0,
@@ -126,13 +128,13 @@ export default function CreateListingPage() {
     if (user?.publicKey) {
       fetchExistingListings()
     }
-    
+
     const handleBeforeUnload = () => {
       clearAllTempImages()
     }
-    
+
     window.addEventListener('beforeunload', handleBeforeUnload)
-    
+
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       clearAllTempImages()
@@ -147,7 +149,7 @@ export default function CreateListingPage() {
           'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
         }
       })
-      
+
       if (response.ok) {
         const data = await response.json()
         const listings = data.listings || []
@@ -174,11 +176,11 @@ export default function CreateListingPage() {
           'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
         }
       })
-      
+
       if (response.ok) {
         const { images } = await response.json()
         await Promise.all(
-          images.map((img: UploadedImage) => 
+          images.map((img: UploadedImage) =>
             fetch(`/api/listings/image/${img.id}`, {
               method: 'DELETE',
               headers: {
@@ -246,7 +248,7 @@ export default function CreateListingPage() {
       setVpRequestUri(data.vpRequestUri)
       setQrCodeUrl(data.qrCodeUrl)
       setDisclosureStep('waiting')
-      
+
       startPollingDisclosure(data.requestId, selectedCredential.data.credentialReference)
       toast.success('憑證揭露請求已發起')
     } catch (error) {
@@ -269,7 +271,7 @@ export default function CreateListingPage() {
         if (response.ok) {
           const status = await response.json()
           setDisclosureStatus(status)
-          
+
           if (status.status === 'completed' && status.success !== false) {
             clearInterval(pollInterval)
             setDisclosureStep('completed')
@@ -319,7 +321,7 @@ export default function CreateListingPage() {
   const handleFacilityChange = (facility: string, checked: boolean) => {
     setFormData(prev => ({
       ...prev,
-      facilities: checked 
+      facilities: checked
         ? [...prev.facilities, facility]
         : prev.facilities.filter(f => f !== facility)
     }))
@@ -327,13 +329,13 @@ export default function CreateListingPage() {
 
   const handleImageUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return
-    
+
     const newImages = Array.from(files).filter(file => file.type.startsWith('image/'))
     if (newImages.length + formData.uploadedImages.length > 10) {
       toast.error('最多只能上傳10張照片')
       return
     }
-    
+
     try {
       setUploading(true)
       const formDataToSend = new FormData()
@@ -358,7 +360,7 @@ export default function CreateListingPage() {
         ...prev,
         uploadedImages: [...prev.uploadedImages, ...images]
       }))
-      
+
       toast.success(`成功上傳 ${images.length} 張照片`)
     } catch (error) {
       console.error('Error uploading images:', error)
@@ -392,12 +394,12 @@ export default function CreateListingPage() {
       if (!response.ok) {
         throw new Error('Delete failed')
       }
-      
+
       toast.success('照片已刪除')
     } catch (error) {
       console.error('Error removing image:', error)
       toast.error('刪除照片失敗，已回復')
-      
+
       setFormData(prev => {
         const newImages = [...prev.uploadedImages]
         newImages.splice(index, 0, imageToRemove)
@@ -449,7 +451,7 @@ export default function CreateListingPage() {
       await clearAllTempImages()
       setFormData(prev => ({ ...prev, uploadedImages: [] }))
     }
-    
+
     if (fromStep === 'waiting') {
       setDisclosureStep('select')
     } else if (fromStep === 'completed') {
@@ -479,9 +481,11 @@ export default function CreateListingPage() {
         },
         features: {
           bedroom: formData.bedroom,
+          livingroom: formData.livingroom,
           bathroom: formData.bathroom,
           balcony: formData.balcony
         },
+        rent: formData.rent,
         facilities: formData.facilities,
         rules: {
           pet: formData.pet,
@@ -523,7 +527,7 @@ export default function CreateListingPage() {
 
       const { transaction: serializedTx, cleanup } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
-      
+
       const { executeTransaction } = useTransaction({
         onSuccess: () => {
           toast.success('房源發布成功！')
@@ -540,7 +544,7 @@ export default function CreateListingPage() {
           imageIds: cleanup.imageHashes
         } : undefined
       })
-      
+
       await executeTransaction(tx)
 
     } catch (error) {
@@ -580,10 +584,10 @@ export default function CreateListingPage() {
       <div className="text-center">
         <h1 className="text-3xl font-bold">刊登房源</h1>
         <p className="text-muted-foreground">
-          步驟 {disclosureStep === 'select' || disclosureStep === 'waiting' || disclosureStep === 'completed' ? '1' : 
-                disclosureStep === 'form' ? '2' : '3'}/3：
+          步驟 {disclosureStep === 'select' || disclosureStep === 'waiting' || disclosureStep === 'completed' ? '1' :
+            disclosureStep === 'form' ? '2' : '3'}/3：
           {disclosureStep === 'select' || disclosureStep === 'waiting' || disclosureStep === 'completed' ? '選擇產權憑證' :
-           disclosureStep === 'form' ? '填寫房源資訊' : '預覽與發布'}
+            disclosureStep === 'form' ? '填寫房源資訊' : '預覽與發布'}
         </p>
       </div>
 
@@ -618,17 +622,16 @@ export default function CreateListingPage() {
                 const isUsed = isCredentialUsed(credential.address)
                 const isExpired = new Date(credential.expiry * 1000) <= new Date()
                 const isDisabled = isUsed || isExpired
-                
+
                 return (
-                  <Card 
-                    key={credential.address} 
-                    className={`transition-all ${
-                      isDisabled 
-                        ? 'opacity-50 cursor-not-allowed bg-muted/30' 
-                        : selectedCredential?.address === credential.address 
-                          ? 'ring-2 ring-primary cursor-pointer' 
-                          : 'hover:bg-muted/50 cursor-pointer'
-                    }`}
+                  <Card
+                    key={credential.address}
+                    className={`transition-all ${isDisabled
+                      ? 'opacity-50 cursor-not-allowed bg-muted/30'
+                      : selectedCredential?.address === credential.address
+                        ? 'ring-2 ring-primary cursor-pointer'
+                        : 'hover:bg-muted/50 cursor-pointer'
+                      }`}
                     onClick={() => handleSelectCredential(credential)}
                   >
                     <CardHeader>
@@ -664,8 +667,8 @@ export default function CreateListingPage() {
                               className="h-6 w-6 p-0"
                               disabled={isDisabled}
                             >
-                              {expandedFields.has(`address-${credential.address}`) ? 
-                                <EyeOff className="h-3 w-3" /> : 
+                              {expandedFields.has(`address-${credential.address}`) ?
+                                <EyeOff className="h-3 w-3" /> :
                                 <Eye className="h-3 w-3" />
                               }
                             </Button>
@@ -674,14 +677,14 @@ export default function CreateListingPage() {
                             {formatDisplayText(credential.address, `address-${credential.address}`)}
                           </div>
                         </div>
-                        
+
                         <div>
                           <span className="text-muted-foreground">憑證ID</span>
                           <div className="font-mono text-xs bg-muted p-2 rounded mt-1 break-all">
                             {credential.data.credentialReference}
                           </div>
                         </div>
-                        
+
                         <div>
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-muted-foreground">Merkle Root</span>
@@ -695,8 +698,8 @@ export default function CreateListingPage() {
                               className="h-6 w-6 p-0"
                               disabled={isDisabled}
                             >
-                              {expandedFields.has(`merkle-${credential.data.merkleRoot}`) ? 
-                                <EyeOff className="h-3 w-3" /> : 
+                              {expandedFields.has(`merkle-${credential.data.merkleRoot}`) ?
+                                <EyeOff className="h-3 w-3" /> :
                                 <Eye className="h-3 w-3" />
                               }
                             </Button>
@@ -705,7 +708,7 @@ export default function CreateListingPage() {
                             {formatDisplayText(credential.data.merkleRoot, `merkle-${credential.data.merkleRoot}`)}
                           </div>
                         </div>
-                        
+
                         <div>
                           <span className="text-muted-foreground">到期日</span>
                           <div className="text-xs bg-muted p-2 rounded mt-1">
@@ -713,14 +716,14 @@ export default function CreateListingPage() {
                           </div>
                         </div>
                       </div>
-                      
+
                       {isUsed && (
                         <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded border-l-4 border-destructive">
                           此憑證已用於刊登房源，無法重複使用
                         </div>
                       )}
 
-                        {selectedCredential?.address === credential.address && !isUsed && (
+                      {selectedCredential?.address === credential.address && !isUsed && (
                         <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded">
                           將揭露：房產地址、建物面積、使用類型
                         </div>
@@ -735,7 +738,7 @@ export default function CreateListingPage() {
 
           {selectedCredential && (
             <div className="flex justify-center">
-              <Button 
+              <Button
                 onClick={handleStartDisclosure}
                 disabled={loading}
                 size="lg"
@@ -768,16 +771,16 @@ export default function CreateListingPage() {
             <CardContent className="space-y-4">
               <div className="flex justify-center">
                 <div className="p-6 bg-white rounded-2xl shadow-lg border">
-                  <img 
-                    src={qrCodeUrl} 
+                  <img
+                    src={qrCodeUrl}
                     alt="Disclosure QR Code"
                     className="w-64 h-64 rounded-xl"
                   />
                 </div>
               </div>
-              
+
               <Separator />
-              
+
               <div className="space-y-2">
                 <div className="text-sm text-muted-foreground">或複製連結：</div>
                 <div className="flex items-center space-x-2">
@@ -959,6 +962,16 @@ export default function CreateListingPage() {
                     />
                   </div>
                   <div className="space-y-2">
+                    <Label htmlFor="livingroom">客廳數</Label>
+                    <Input
+                      id="livingroom"
+                      type="number"
+                      value={formData.livingroom}
+                      onChange={(e) => handleFormChange('livingroom', parseInt(e.target.value) || 1)}
+                      min="0"
+                    />
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="bathroom">衛浴數</Label>
                     <Input
                       id="bathroom"
@@ -1028,7 +1041,7 @@ export default function CreateListingPage() {
                       <span className="text-sm text-muted-foreground whitespace-nowrap">個月租金</span>
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {formData.deposit > 0 && formData.rent > 0 && 
+                      {formData.deposit > 0 && formData.rent > 0 &&
                         `約 ${formData.deposit.toLocaleString()} USDC (${Math.round(formData.deposit / formData.rent * 2) / 2} 個月)`
                       }
                     </div>
@@ -1092,8 +1105,8 @@ export default function CreateListingPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-3">
                       <Label className="text-base font-medium">水費計費方式</Label>
-                      <RadioGroup 
-                        value={formData.waterBilling} 
+                      <RadioGroup
+                        value={formData.waterBilling}
                         onValueChange={(value) => handleFormChange('waterBilling', value)}
                         className="space-y-2"
                       >
@@ -1110,8 +1123,8 @@ export default function CreateListingPage() {
 
                     <div className="space-y-3">
                       <Label className="text-base font-medium">電費計費方式</Label>
-                      <RadioGroup 
-                        value={formData.electricityBilling} 
+                      <RadioGroup
+                        value={formData.electricityBilling}
                         onValueChange={(value) => handleFormChange('electricityBilling', value)}
                         className="space-y-2"
                       >
@@ -1194,7 +1207,7 @@ export default function CreateListingPage() {
                         </Button>
                       </div>
                     ))}
-                    
+
                     {formData.uploadedImages.length < 10 && (
                       <Label htmlFor="image-upload" className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
                         <div className="w-full h-24 border-2 border-dashed border-muted-foreground/25 rounded-lg flex flex-col items-center justify-center hover:border-muted-foreground/50 transition-colors">
@@ -1206,7 +1219,7 @@ export default function CreateListingPage() {
                       </Label>
                     )}
                   </div>
-                  
+
                   <div className="text-xs text-muted-foreground">
                     已上傳 {formData.uploadedImages.length} / 10 張照片，支援 JPG、PNG 格式
                   </div>

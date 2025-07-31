@@ -53,6 +53,7 @@ interface Listing {
     }
     features?: {
       bedroom: number
+      livingroom: number
       bathroom: number
     }
     media?: {

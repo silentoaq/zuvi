@@ -89,7 +89,7 @@ export default function ApplyPage() {
   const { listingId } = useParams<{ listingId: string }>()
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  
+
   const [listing, setListing] = useState<Listing | null>(null)
   const [loading, setLoading] = useState(true)
   const [step, setStep] = useState<'select' | 'waiting' | 'completed' | 'form' | 'preview' | 'submit'>('select')
@@ -123,13 +123,13 @@ export default function ApplyPage() {
       if (response.ok) {
         const data = await response.json()
         setListing(data)
-        
+
         if (data.status !== 0) {
           toast.error('此房源目前無法申請')
           navigate('/')
           return
         }
-        
+
         if (data.owner === user?.publicKey) {
           toast.error('無法申請自己的房源')
           navigate('/')
@@ -139,7 +139,6 @@ export default function ApplyPage() {
         throw new Error('房源不存在')
       }
     } catch (error) {
-      console.error('Error fetching listing:', error)
       toast.error('載入房源失敗')
       navigate('/')
     } finally {
@@ -171,20 +170,17 @@ export default function ApplyPage() {
 
   const handleSelectCredential = () => {
     if (!citizenCredential?.exists) return
-    
-    const credentialId = citizenCredential.data?.credentialReference || 
-                        citizenCredential.data?.credentialId ||
-                        citizenCredential.address ||
-                        ''
-    
-    console.log('Citizen credential data:', citizenCredential.data)
-    console.log('Selected credential ID:', credentialId)
-    
+
+    const credentialId = citizenCredential.data?.credentialReference ||
+      citizenCredential.data?.credentialId ||
+      citizenCredential.address ||
+      ''
+
     if (!credentialId) {
       toast.error('無法取得憑證ID，請檢查憑證狀態')
       return
     }
-    
+
     setSelectedCredential({
       exists: citizenCredential.exists,
       address: citizenCredential.address || '',
@@ -207,9 +203,7 @@ export default function ApplyPage() {
 
     try {
       setProcessing(true)
-      
-      console.log('Starting disclosure with credentialId:', credentialId)
-      
+
       const response = await fetch('/api/disclosure/citizen', {
         method: 'POST',
         headers: {
@@ -231,11 +225,10 @@ export default function ApplyPage() {
       setVpRequestUri(data.vpRequestUri)
       setQrCodeUrl(data.qrCodeUrl)
       setStep('waiting')
-      
+
       startPollingDisclosure(data.requestId, credentialId)
       toast.success('憑證揭露請求已發起')
     } catch (error) {
-      console.error('Error starting disclosure:', error)
       toast.error('無法發起憑證揭露，請稍後再試')
     } finally {
       setProcessing(false)
@@ -254,7 +247,7 @@ export default function ApplyPage() {
         if (response.ok) {
           const status = await response.json()
           setDisclosureStatus(status)
-          
+
           if (status.status === 'completed' && status.success !== false) {
             clearInterval(pollInterval)
             setStep('completed')
@@ -270,7 +263,6 @@ export default function ApplyPage() {
           }
         }
       } catch (error) {
-        console.error('Error polling disclosure status:', error)
         clearInterval(pollInterval)
         setStep('select')
       }
@@ -366,7 +358,7 @@ export default function ApplyPage() {
 
       const { transaction: serializedTx, cleanup } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
-      
+
       const { executeTransaction } = useTransaction({
         onSuccess: () => {
           toast.success('申請提交成功！')
@@ -378,7 +370,7 @@ export default function ApplyPage() {
           ipfsHashes: [cleanup.ipfsHash]
         } : undefined
       })
-      
+
       await executeTransaction(tx)
 
     } catch (error) {
@@ -450,10 +442,10 @@ export default function ApplyPage() {
       <div className="text-center">
         <h1 className="text-3xl font-bold">申請租賃</h1>
         <p className="text-muted-foreground">
-          步驟 {step === 'select' || step === 'waiting' || step === 'completed' ? '1' : 
-                step === 'form' ? '2' : '3'}/3：
+          步驟 {step === 'select' || step === 'waiting' || step === 'completed' ? '1' :
+            step === 'form' ? '2' : '3'}/3：
           {step === 'select' || step === 'waiting' || step === 'completed' ? '身份驗證' :
-           step === 'form' ? '填寫申請資料' : '預覽與提交'}
+            step === 'form' ? '填寫申請資料' : '預覽與提交'}
         </p>
       </div>
 
@@ -500,10 +492,9 @@ export default function ApplyPage() {
               <CardTitle>選擇自然人憑證</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Card 
-                className={`transition-all cursor-pointer ${
-                  selectedCredential ? 'ring-2 ring-primary bg-primary/5' : 'hover:bg-muted/50'
-                }`}
+              <Card
+                className={`transition-all cursor-pointer ${selectedCredential ? 'ring-2 ring-primary bg-primary/5' : 'hover:bg-muted/50'
+                  }`}
                 onClick={handleSelectCredential}
               >
                 <CardHeader>
@@ -530,8 +521,8 @@ export default function ApplyPage() {
                           }}
                           className="h-6 w-6 p-0"
                         >
-                          {expandedFields.has(`address-${citizenCredential?.address}`) ? 
-                            <EyeOff className="h-3 w-3" /> : 
+                          {expandedFields.has(`address-${citizenCredential?.address}`) ?
+                            <EyeOff className="h-3 w-3" /> :
                             <Eye className="h-3 w-3" />
                           }
                         </Button>
@@ -540,14 +531,14 @@ export default function ApplyPage() {
                         {formatDisplayText(citizenCredential?.address || '', `address-${citizenCredential?.address}`)}
                       </div>
                     </div>
-                    
+
                     <div>
                       <span className="text-muted-foreground">憑證ID</span>
                       <div className="font-mono text-xs bg-muted p-2 rounded mt-1 break-all">
                         {citizenCredential?.data?.credentialReference || citizenCredential?.data?.credentialId || citizenCredential?.address || '未知'}
                       </div>
                     </div>
-                    
+
                     {citizenCredential?.data?.merkleRoot && (
                       <div>
                         <div className="flex items-center justify-between mb-1">
@@ -561,8 +552,8 @@ export default function ApplyPage() {
                             }}
                             className="h-6 w-6 p-0"
                           >
-                            {expandedFields.has(`merkle-${citizenCredential.data.merkleRoot}`) ? 
-                              <EyeOff className="h-3 w-3" /> : 
+                            {expandedFields.has(`merkle-${citizenCredential.data.merkleRoot}`) ?
+                              <EyeOff className="h-3 w-3" /> :
                               <Eye className="h-3 w-3" />
                             }
                           </Button>
@@ -572,7 +563,7 @@ export default function ApplyPage() {
                         </div>
                       </div>
                     )}
-                    
+
                     <div>
                       <span className="text-muted-foreground">到期日</span>
                       <div className="text-xs bg-muted p-2 rounded mt-1">
@@ -580,7 +571,7 @@ export default function ApplyPage() {
                       </div>
                     </div>
                   </div>
-                  
+
                   {selectedCredential && (
                     <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded">
                       將揭露：出生年月日、性別
@@ -593,7 +584,7 @@ export default function ApplyPage() {
 
           {selectedCredential && (
             <div className="flex justify-center">
-              <Button 
+              <Button
                 onClick={handleStartDisclosure}
                 disabled={processing}
                 size="lg"
@@ -621,16 +612,16 @@ export default function ApplyPage() {
             <CardContent className="space-y-4">
               <div className="flex justify-center">
                 <div className="p-6 bg-white rounded-2xl shadow-lg border">
-                  <img 
-                    src={qrCodeUrl} 
+                  <img
+                    src={qrCodeUrl}
                     alt="Disclosure QR Code"
                     className="w-64 h-64 rounded-xl"
                   />
                 </div>
               </div>
-              
+
               <Separator />
-              
+
               <div className="space-y-2">
                 <div className="text-sm text-muted-foreground">或複製連結：</div>
                 <div className="flex items-center space-x-2">
@@ -773,7 +764,7 @@ export default function ApplyPage() {
                         )}
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
+                    <PopoverContent className="w-auto p-0 h-[320px] overflow-hidden" align="start">
                       <CalendarComponent
                         mode="single"
                         selected={formData.moveInDate}

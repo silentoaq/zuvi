@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, events::*, state::*};
 
 /// 切換房源狀態（上架/下架）
 pub fn toggle_listing(ctx: Context<ToggleListing>) -> Result<()> {
@@ -23,6 +23,12 @@ pub fn toggle_listing(ctx: Context<ToggleListing>) -> Result<()> {
         LISTING_STATUS_INACTIVE => LISTING_STATUS_AVAILABLE,
         _ => return Err(ZuviError::InvalidParameter.into()),
     };
+    
+    emit!(ListingToggled {
+        listing: listing.key(),
+        owner: listing.owner,
+        new_status: listing.status,
+    });
     
     msg!("房源狀態已切換");
     msg!("新狀態: {}", if listing.status == LISTING_STATUS_AVAILABLE { "可用" } else { "下架" });

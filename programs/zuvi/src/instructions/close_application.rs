@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, events::*, state::*};
 
 pub fn close_application(ctx: Context<CloseApplication>) -> Result<()> {
     let application = &ctx.accounts.application;
@@ -14,6 +14,12 @@ pub fn close_application(ctx: Context<CloseApplication>) -> Result<()> {
         application.status != APPLICATION_STATUS_APPROVED,
         ZuviError::AlreadySigned
     );
+    
+    emit!(ApplicationClosed {
+        application: application.key(),
+        listing: application.listing,
+        applicant: applicant.key(),
+    });
     
     msg!("申請已關閉");
     msg!("申請人: {}", applicant.key());

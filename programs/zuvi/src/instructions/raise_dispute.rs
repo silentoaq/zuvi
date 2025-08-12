@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, events::*, state::*};
 
 pub fn raise_dispute(ctx: Context<RaiseDispute>, reason: u8) -> Result<()> {
     let lease = &ctx.accounts.lease;
@@ -30,6 +30,15 @@ pub fn raise_dispute(ctx: Context<RaiseDispute>, reason: u8) -> Result<()> {
     dispute.created_at = clock.unix_timestamp;
     
     escrow.has_dispute = true;
+    
+    emit!(DisputeRaised {
+        dispute: dispute.key(),
+        lease: lease.key(),
+        escrow: escrow.key(),
+        initiator: initiator.key(),
+        reason,
+        created_at: dispute.created_at,
+    });
     
     msg!("爭議已發起");
     msg!("發起人: {}", initiator.key());

@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, events::*, state::*};
 
 pub fn create_lease(
     ctx: Context<CreateLease>,
@@ -27,6 +27,11 @@ pub fn create_lease(
     require!(
         application.applicant == applicant,
         ZuviError::InvalidParameter
+    );
+    
+    require!(
+        !listing.has_active_lease,
+        ZuviError::LeaseAlreadyExists
     );
     
     require!(
@@ -64,6 +69,17 @@ pub fn create_lease(
     lease.status = LEASE_STATUS_ACTIVE;
     lease.landlord_signed = true;
     lease.tenant_signed = false;
+    
+    emit!(LeaseCreated {
+        lease: lease.key(),
+        listing: lease.listing,
+        landlord: lease.landlord,
+        tenant: lease.tenant,
+        start_date: lease.start_date,
+        end_date: lease.end_date,
+        rent: lease.rent,
+        deposit: lease.deposit,
+    });
     
     msg!("租約已創建，等待承租人簽署");
     msg!("房東: {}", lease.landlord);

@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, events::*, state::*};
 
 pub fn reject_application(
     ctx: Context<RejectApplication>,
@@ -25,6 +25,13 @@ pub fn reject_application(
     );
     
     application.status = APPLICATION_STATUS_REJECTED;
+    
+    emit!(ApplicationRejected {
+        application: application.key(),
+        listing: listing.key(),
+        applicant,
+        owner: ctx.accounts.owner.key(),
+    });
     
     msg!("申請已拒絕");
     msg!("申請人: {}", applicant);

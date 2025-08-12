@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/zuvi.json`.
  */
 export type Zuvi = {
-  "address": "5YUDDtqCHn11CgvmqNe3F2BgXzq68WeQJasv8hQFrux1",
+  "address": "CfkFK7wHd6Ujo75qmyFk262qkkKdnuXVTF7DY4YPLPHr",
   "metadata": {
     "name": "zuvi",
     "version": "0.1.0",
@@ -143,6 +143,7 @@ export type Zuvi = {
       "accounts": [
         {
           "name": "listing",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -194,6 +195,88 @@ export type Zuvi = {
         },
         {
           "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "applicant",
+          "type": "pubkey"
+        },
+        {
+          "name": "createdAt",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "cancelApprovedApplication",
+      "discriminator": [
+        173,
+        152,
+        68,
+        90,
+        104,
+        34,
+        24,
+        11
+      ],
+      "accounts": [
+        {
+          "name": "listing",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "listing.property_attest",
+                "account": "listing"
+              }
+            ]
+          }
+        },
+        {
+          "name": "application",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  112,
+                  112,
+                  108,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "application.listing",
+                "account": "application"
+              },
+              {
+                "kind": "arg",
+                "path": "applicant"
+              },
+              {
+                "kind": "arg",
+                "path": "createdAt"
+              }
+            ]
+          }
+        },
+        {
+          "name": "signer",
           "signer": true
         }
       ],
@@ -296,6 +379,28 @@ export type Zuvi = {
                   105,
                   103
                 ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "listing.property_attest",
+                "account": "listing"
               }
             ]
           }
@@ -1100,6 +1205,28 @@ export type Zuvi = {
           }
         },
         {
+          "name": "listing",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "listing.property_attest",
+                "account": "listing"
+              }
+            ]
+          }
+        },
+        {
           "name": "lease",
           "pda": {
             "seeds": [
@@ -1584,6 +1711,203 @@ export type Zuvi = {
       ]
     }
   ],
+  "events": [
+    {
+      "name": "applicationApproved",
+      "discriminator": [
+        15,
+        107,
+        157,
+        97,
+        85,
+        208,
+        97,
+        93
+      ]
+    },
+    {
+      "name": "applicationCancelled",
+      "discriminator": [
+        86,
+        109,
+        21,
+        30,
+        91,
+        51,
+        148,
+        1
+      ]
+    },
+    {
+      "name": "applicationClosed",
+      "discriminator": [
+        130,
+        106,
+        177,
+        114,
+        127,
+        70,
+        89,
+        16
+      ]
+    },
+    {
+      "name": "applicationRejected",
+      "discriminator": [
+        123,
+        146,
+        55,
+        77,
+        187,
+        177,
+        232,
+        140
+      ]
+    },
+    {
+      "name": "applicationSubmitted",
+      "discriminator": [
+        202,
+        125,
+        149,
+        115,
+        111,
+        233,
+        172,
+        132
+      ]
+    },
+    {
+      "name": "disputeRaised",
+      "discriminator": [
+        246,
+        167,
+        109,
+        37,
+        142,
+        45,
+        38,
+        176
+      ]
+    },
+    {
+      "name": "disputeResolved",
+      "discriminator": [
+        121,
+        64,
+        249,
+        153,
+        139,
+        128,
+        236,
+        187
+      ]
+    },
+    {
+      "name": "leaseCreated",
+      "discriminator": [
+        203,
+        18,
+        89,
+        131,
+        118,
+        205,
+        117,
+        1
+      ]
+    },
+    {
+      "name": "leaseSigned",
+      "discriminator": [
+        66,
+        243,
+        252,
+        190,
+        196,
+        0,
+        51,
+        237
+      ]
+    },
+    {
+      "name": "listingCreated",
+      "discriminator": [
+        94,
+        164,
+        167,
+        255,
+        246,
+        186,
+        12,
+        96
+      ]
+    },
+    {
+      "name": "listingToggled",
+      "discriminator": [
+        183,
+        99,
+        197,
+        79,
+        92,
+        11,
+        125,
+        164
+      ]
+    },
+    {
+      "name": "listingUpdated",
+      "discriminator": [
+        190,
+        215,
+        199,
+        138,
+        255,
+        248,
+        98,
+        62
+      ]
+    },
+    {
+      "name": "releaseConfirmed",
+      "discriminator": [
+        246,
+        75,
+        82,
+        230,
+        221,
+        220,
+        198,
+        154
+      ]
+    },
+    {
+      "name": "releaseInitiated",
+      "discriminator": [
+        239,
+        5,
+        143,
+        89,
+        141,
+        107,
+        204,
+        240
+      ]
+    },
+    {
+      "name": "rentPaid",
+      "discriminator": [
+        140,
+        29,
+        172,
+        69,
+        152,
+        38,
+        73,
+        241
+      ]
+    }
+  ],
   "errors": [
     {
       "code": 6000,
@@ -1771,6 +2095,126 @@ export type Zuvi = {
       }
     },
     {
+      "name": "applicationApproved",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "application",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "applicant",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "applicationCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "application",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "applicant",
+            "type": "pubkey"
+          },
+          {
+            "name": "cancelledBy",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "applicationClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "application",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "applicant",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "applicationRejected",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "application",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "applicant",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "applicationSubmitted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "application",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "applicant",
+            "type": "pubkey"
+          },
+          {
+            "name": "tenantAttest",
+            "type": "pubkey"
+          },
+          {
+            "name": "createdAt",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "config",
       "docs": [
         "系統配置帳戶"
@@ -1865,6 +2309,74 @@ export type Zuvi = {
               "創建時間戳"
             ],
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "disputeRaised",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dispute",
+            "type": "pubkey"
+          },
+          {
+            "name": "lease",
+            "type": "pubkey"
+          },
+          {
+            "name": "escrow",
+            "type": "pubkey"
+          },
+          {
+            "name": "initiator",
+            "type": "pubkey"
+          },
+          {
+            "name": "reason",
+            "type": "u8"
+          },
+          {
+            "name": "createdAt",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "disputeResolved",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "dispute",
+            "type": "pubkey"
+          },
+          {
+            "name": "lease",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "escrow",
+            "type": "pubkey"
+          },
+          {
+            "name": "arbitrator",
+            "type": "pubkey"
+          },
+          {
+            "name": "landlordAmount",
+            "type": "u64"
+          },
+          {
+            "name": "tenantAmount",
+            "type": "u64"
           }
         ]
       }
@@ -2058,6 +2570,82 @@ export type Zuvi = {
       }
     },
     {
+      "name": "leaseCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "lease",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "landlord",
+            "type": "pubkey"
+          },
+          {
+            "name": "tenant",
+            "type": "pubkey"
+          },
+          {
+            "name": "startDate",
+            "type": "i64"
+          },
+          {
+            "name": "endDate",
+            "type": "i64"
+          },
+          {
+            "name": "rent",
+            "type": "u64"
+          },
+          {
+            "name": "deposit",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "leaseSigned",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "lease",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "landlord",
+            "type": "pubkey"
+          },
+          {
+            "name": "tenant",
+            "type": "pubkey"
+          },
+          {
+            "name": "escrow",
+            "type": "pubkey"
+          },
+          {
+            "name": "depositAmount",
+            "type": "u64"
+          },
+          {
+            "name": "firstRentPaid",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "listing",
       "docs": [
         "房源列表帳戶"
@@ -2141,10 +2729,208 @@ export type Zuvi = {
             }
           },
           {
+            "name": "hasActiveLease",
+            "docs": [
+              "是否有生效中的租約"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "hasApprovedApplication",
+            "docs": [
+              "是否有已核准的申請"
+            ],
+            "type": "bool"
+          },
+          {
             "name": "createdAt",
             "docs": [
               "創建時間戳"
             ],
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "listingCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "propertyAttest",
+            "type": "pubkey"
+          },
+          {
+            "name": "rent",
+            "type": "u64"
+          },
+          {
+            "name": "deposit",
+            "type": "u64"
+          },
+          {
+            "name": "createdAt",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "listingToggled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "newStatus",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "listingUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "rent",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "deposit",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "metadataUpdated",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "releaseConfirmed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "escrow",
+            "type": "pubkey"
+          },
+          {
+            "name": "lease",
+            "type": "pubkey"
+          },
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "landlord",
+            "type": "pubkey"
+          },
+          {
+            "name": "tenant",
+            "type": "pubkey"
+          },
+          {
+            "name": "landlordAmount",
+            "type": "u64"
+          },
+          {
+            "name": "tenantAmount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "releaseInitiated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "escrow",
+            "type": "pubkey"
+          },
+          {
+            "name": "lease",
+            "type": "pubkey"
+          },
+          {
+            "name": "initiator",
+            "type": "pubkey"
+          },
+          {
+            "name": "landlordAmount",
+            "type": "u64"
+          },
+          {
+            "name": "tenantAmount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rentPaid",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "lease",
+            "type": "pubkey"
+          },
+          {
+            "name": "tenant",
+            "type": "pubkey"
+          },
+          {
+            "name": "landlord",
+            "type": "pubkey"
+          },
+          {
+            "name": "month",
+            "type": "u32"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "platformFee",
+            "type": "u64"
+          },
+          {
+            "name": "paymentDate",
             "type": "i64"
           }
         ]

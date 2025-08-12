@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, Transfer};
 use anchor_spl::token_interface::{Mint, TokenAccount};
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, events::*, state::*};
 
 pub fn sign_lease(ctx: Context<SignLease>) -> Result<()> {
     let config = &ctx.accounts.config;
@@ -80,6 +80,17 @@ pub fn sign_lease(ctx: Context<SignLease>) -> Result<()> {
     
     listing.status = LISTING_STATUS_RENTED;
     listing.current_tenant = Some(lease.tenant);
+    listing.has_active_lease = true;
+    
+    emit!(LeaseSigned {
+        lease: lease.key(),
+        listing: listing.key(),
+        landlord: lease.landlord,
+        tenant: lease.tenant,
+        escrow: escrow.key(),
+        deposit_amount: lease.deposit,
+        first_rent_paid: lease.rent,
+    });
     
     msg!("租約已生效");
     msg!("押金 {} USDC 已託管", lease.deposit);

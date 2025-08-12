@@ -2,13 +2,14 @@ use anchor_lang::prelude::*;
 
 pub mod constants;
 pub mod errors;
+pub mod events;
 pub mod instructions;
 pub mod state;
 pub mod time_utils;
 
 use instructions::*;
 
-declare_id!("5YUDDtqCHn11CgvmqNe3F2BgXzq68WeQJasv8hQFrux1");
+declare_id!("CfkFK7wHd6Ujo75qmyFk262qkkKdnuXVTF7DY4YPLPHr");
 
 #[program]
 pub mod zuvi {
@@ -55,6 +56,10 @@ pub mod zuvi {
 
     pub fn close_application(ctx: Context<CloseApplication>, _applicant: Pubkey, _created_at: i64) -> Result<()> {
         instructions::close_application(ctx)
+    }
+
+    pub fn cancel_approved_application(ctx: Context<CancelApprovedApplication>, _applicant: Pubkey, _created_at: i64) -> Result<()> {
+        instructions::cancel_approved_application(ctx, _applicant, _created_at)
     }
 
     pub fn approve_application(ctx: Context<ApproveApplication>, applicant: Pubkey, _created_at: i64) -> Result<()> {

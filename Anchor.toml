@@ -6,10 +6,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-zuvi = "5YUDDtqCHn11CgvmqNe3F2BgXzq68WeQJasv8hQFrux1"
+zuvi = "CfkFK7wHd6Ujo75qmyFk262qkkKdnuXVTF7DY4YPLPHr"
 
 [programs.devnet]
-zuvi = "5YUDDtqCHn11CgvmqNe3F2BgXzq68WeQJasv8hQFrux1"
+zuvi = "CfkFK7wHd6Ujo75qmyFk262qkkKdnuXVTF7DY4YPLPHr"
 
 [registry]
 url = "https://api.apr.dev"

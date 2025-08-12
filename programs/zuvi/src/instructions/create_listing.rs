@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, events::*, state::*};
 
 /// 創建房源列表
 pub fn create_listing(
@@ -45,7 +45,18 @@ pub fn create_listing(
     listing.metadata_uri = metadata_uri;
     listing.status = LISTING_STATUS_AVAILABLE;
     listing.current_tenant = None;
+    listing.has_active_lease = false;
+    listing.has_approved_application = false;
     listing.created_at = clock.unix_timestamp;
+    
+    emit!(ListingCreated {
+        listing: listing.key(),
+        owner: listing.owner,
+        property_attest: listing.property_attest,
+        rent,
+        deposit,
+        created_at: listing.created_at,
+    });
     
     msg!("房源創建成功");
     msg!("房東: {}", listing.owner);

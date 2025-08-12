@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, events::*, state::*};
 
 /// 更新房源資訊
 pub fn update_listing(
@@ -21,6 +21,8 @@ pub fn update_listing(
         listing.status != LISTING_STATUS_RENTED,
         ZuviError::ListingAlreadyRented
     );
+    
+    let mut metadata_updated = false;
     
     // 更新租金
     if let Some(new_rent) = rent {
@@ -47,8 +49,17 @@ pub fn update_listing(
     // 更新 metadata URI
     if let Some(new_metadata_uri) = metadata_uri {
         listing.metadata_uri = new_metadata_uri;
+        metadata_updated = true;
         msg!("房源資料已更新");
     }
+    
+    emit!(ListingUpdated {
+        listing: listing.key(),
+        owner: listing.owner,
+        rent,
+        deposit,
+        metadata_updated,
+    });
     
     msg!("房源更新成功");
     msg!("房源: {}", listing.key());

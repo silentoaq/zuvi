@@ -1,12 +1,12 @@
 use anchor_lang::prelude::*;
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, events::*, state::*};
 
 pub fn approve_application(
     ctx: Context<ApproveApplication>,
     applicant: Pubkey,
     _created_at: i64,
 ) -> Result<()> {
-    let listing = &ctx.accounts.listing;
+    let listing = &mut ctx.accounts.listing;
     let application = &mut ctx.accounts.application;
     
     require!(
@@ -29,7 +29,25 @@ pub fn approve_application(
         ZuviError::ListingInactive
     );
     
+    require!(
+        !listing.has_approved_application,
+        ZuviError::AlreadySigned
+    );
+    
+    require!(
+        !listing.has_active_lease,
+        ZuviError::LeaseAlreadyExists
+    );
+    
     application.status = APPLICATION_STATUS_APPROVED;
+    listing.has_approved_application = true;
+    
+    emit!(ApplicationApproved {
+        application: application.key(),
+        listing: listing.key(),
+        applicant,
+        owner: ctx.accounts.owner.key(),
+    });
     
     msg!("申請已核准");
     msg!("申請人: {}", applicant);
@@ -42,6 +60,7 @@ pub fn approve_application(
 #[instruction(applicant: Pubkey, _created_at: i64)]
 pub struct ApproveApplication<'info> {
     #[account(
+        mut,
         seeds = [LISTING_SEED, listing.property_attest.as_ref()],
         bump
     )]

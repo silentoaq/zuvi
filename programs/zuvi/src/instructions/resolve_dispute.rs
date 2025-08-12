@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, Transfer};
 use anchor_spl::token_interface::TokenAccount;
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, events::DisputeResolved, state::*};
 
 pub fn resolve_dispute(
     ctx: Context<ResolveDispute>,
@@ -10,6 +10,7 @@ pub fn resolve_dispute(
 ) -> Result<()> {
     let config = &ctx.accounts.config;
     let lease = &ctx.accounts.lease;
+    let listing = &mut ctx.accounts.listing;
     let escrow = &mut ctx.accounts.escrow;
     let dispute = &mut ctx.accounts.dispute;
     
@@ -72,6 +73,19 @@ pub fn resolve_dispute(
     escrow.release_to_tenant = tenant_amount;
     escrow.has_dispute = false;
     dispute.status = DISPUTE_STATUS_RESOLVED;
+    listing.status = LISTING_STATUS_AVAILABLE;
+    listing.current_tenant = None;
+    listing.has_active_lease = false;
+    
+    emit!(DisputeResolved {
+        dispute: dispute.key(),
+        lease: lease.key(),
+        listing: listing.key(),
+        escrow: escrow.key(),
+        arbitrator: ctx.accounts.arbitrator.key(),
+        landlord_amount,
+        tenant_amount,
+    });
     
     msg!("爭議已解決");
     msg!("房東收到: {} USDC", landlord_amount);
@@ -83,27 +97,35 @@ pub fn resolve_dispute(
 #[derive(Accounts)]
 pub struct ResolveDispute<'info> {
     #[account(seeds = [CONFIG_SEED], bump)]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
+    
+    #[account(
+        mut,
+        seeds = [LISTING_SEED, listing.property_attest.as_ref()],
+        bump
+    )]
+    pub listing: Box<Account<'info, Listing>>,
     
     #[account(
         seeds = [LEASE_SEED, lease.listing.as_ref(), lease.tenant.as_ref(), &lease.start_date.to_le_bytes()],
-        bump
+        bump,
+        constraint = lease.listing == listing.key()
     )]
-    pub lease: Account<'info, Lease>,
+    pub lease: Box<Account<'info, Lease>>,
     
     #[account(
         mut,
         seeds = [ESCROW_SEED, lease.key().as_ref()],
         bump
     )]
-    pub escrow: Account<'info, Escrow>,
+    pub escrow: Box<Account<'info, Escrow>>,
     
     #[account(
         mut,
         seeds = [DISPUTE_SEED, lease.key().as_ref()],
         bump
     )]
-    pub dispute: Account<'info, Dispute>,
+    pub dispute: Box<Account<'info, Dispute>>,
     
     pub arbitrator: Signer<'info>,
     

@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, Transfer};
 use anchor_spl::token_interface::TokenAccount;
-use crate::{constants::*, errors::*, state::*, time_utils::TimeUtils};
+use crate::{constants::*, errors::*, events::*, state::*, time_utils::TimeUtils};
 
 pub fn pay_rent(ctx: Context<PayRent>) -> Result<()> {
     let config = &ctx.accounts.config;
@@ -70,6 +70,16 @@ pub fn pay_rent(ctx: Context<PayRent>) -> Result<()> {
     lease.paid_months += 1;
     lease.last_payment = clock.unix_timestamp;
     
+    emit!(RentPaid {
+        lease: lease.key(),
+        tenant: lease.tenant,
+        landlord: lease.landlord,
+        month: lease.paid_months,
+        amount: landlord_rent,
+        platform_fee,
+        payment_date: lease.last_payment,
+    });
+    
     msg!("租金已支付");
     msg!("第 {} 期租金", lease.paid_months);
     msg!("房東收到: {} USDC", landlord_rent);
@@ -81,14 +91,14 @@ pub fn pay_rent(ctx: Context<PayRent>) -> Result<()> {
 #[derive(Accounts)]
 pub struct PayRent<'info> {
     #[account(seeds = [CONFIG_SEED], bump)]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
     
     #[account(
         mut,
         seeds = [LEASE_SEED, lease.listing.as_ref(), lease.tenant.as_ref(), &lease.start_date.to_le_bytes()],
         bump
     )]
-    pub lease: Account<'info, Lease>,
+    pub lease: Box<Account<'info, Lease>>,
     
     #[account(mut)]
     pub tenant: Signer<'info>,

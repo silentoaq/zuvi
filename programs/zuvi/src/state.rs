@@ -38,6 +38,10 @@ pub struct Listing {
     pub status: u8,
     /// 當前承租人（如果有）
     pub current_tenant: Option<Pubkey>,
+    /// 是否有生效中的租約
+    pub has_active_lease: bool,
+    /// 是否有已核准的申請
+    pub has_approved_application: bool,
     /// 創建時間戳
     pub created_at: i64,
 }

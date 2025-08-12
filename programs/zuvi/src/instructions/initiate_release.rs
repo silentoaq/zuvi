@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, events::*, state::*};
 
 pub fn initiate_release(
     ctx: Context<InitiateRelease>,
@@ -42,6 +42,14 @@ pub fn initiate_release(
         escrow.landlord_signed = false;
         escrow.tenant_signed = true;
     }
+    
+    emit!(ReleaseInitiated {
+        escrow: escrow.key(),
+        lease: lease.key(),
+        initiator: signer.key(),
+        landlord_amount,
+        tenant_amount,
+    });
     
     msg!("押金結算已發起");
     msg!("房東分配: {} USDC", landlord_amount);

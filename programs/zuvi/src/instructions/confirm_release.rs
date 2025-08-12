@@ -1,10 +1,11 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, Transfer};
 use anchor_spl::token_interface::TokenAccount;
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, events::ReleaseConfirmed, state::*};
 
 pub fn confirm_release(ctx: Context<ConfirmRelease>) -> Result<()> {
     let lease = &ctx.accounts.lease;
+    let listing = &mut ctx.accounts.listing;
     let escrow = &mut ctx.accounts.escrow;
     let signer = &ctx.accounts.signer;
     
@@ -71,6 +72,19 @@ pub fn confirm_release(ctx: Context<ConfirmRelease>) -> Result<()> {
         }
         
         escrow.status = ESCROW_STATUS_RELEASED;
+        listing.status = LISTING_STATUS_AVAILABLE;
+        listing.current_tenant = None;
+        listing.has_active_lease = false;
+        
+        emit!(ReleaseConfirmed {
+            escrow: escrow.key(),
+            lease: lease.key(),
+            listing: listing.key(),
+            landlord: lease.landlord,
+            tenant: lease.tenant,
+            landlord_amount: escrow.release_to_landlord,
+            tenant_amount: escrow.release_to_tenant,
+        });
         
         msg!("押金已釋放");
         msg!("房東收到: {} USDC", escrow.release_to_landlord);
@@ -85,20 +99,28 @@ pub fn confirm_release(ctx: Context<ConfirmRelease>) -> Result<()> {
 #[derive(Accounts)]
 pub struct ConfirmRelease<'info> {
     #[account(seeds = [CONFIG_SEED], bump)]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
+    
+    #[account(
+        mut,
+        seeds = [LISTING_SEED, listing.property_attest.as_ref()],
+        bump
+    )]
+    pub listing: Box<Account<'info, Listing>>,
     
     #[account(
         seeds = [LEASE_SEED, lease.listing.as_ref(), lease.tenant.as_ref(), &lease.start_date.to_le_bytes()],
-        bump
+        bump,
+        constraint = lease.listing == listing.key()
     )]
-    pub lease: Account<'info, Lease>,
+    pub lease: Box<Account<'info, Lease>>,
     
     #[account(
         mut,
         seeds = [ESCROW_SEED, lease.key().as_ref()],
         bump
     )]
-    pub escrow: Account<'info, Escrow>,
+    pub escrow: Box<Account<'info, Escrow>>,
     
     pub signer: Signer<'info>,
     

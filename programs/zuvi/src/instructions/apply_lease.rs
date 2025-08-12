@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::{constants::*, errors::*, state::*};
+use crate::{constants::*, errors::*, events::*, state::*};
 
 pub fn apply_lease(
     ctx: Context<ApplyLease>,
@@ -38,6 +38,14 @@ pub fn apply_lease(
     application.message_uri = message_uri;
     application.status = APPLICATION_STATUS_PENDING;
     application.created_at = created_at;
+    
+    emit!(ApplicationSubmitted {
+        application: application.key(),
+        listing: application.listing,
+        applicant: application.applicant,
+        tenant_attest: application.tenant_attest,
+        created_at: application.created_at,
+    });
     
     msg!("租賃申請已提交");
     msg!("申請人: {}", application.applicant);

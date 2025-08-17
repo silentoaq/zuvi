@@ -1,77 +1,146 @@
-import { useEffect, useState, useCallback } from 'react'
-import { Link } from 'react-router-dom'
-import { FileText, MapPin, Calendar, Clock, X, ChevronDown, ChevronUp, User, Briefcase, Home } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
-import { useAuthStore } from '@/stores/authStore'
-import { useTransaction } from '@/hooks'
-import { toast } from 'sonner'
+import { useState, useEffect, useCallback } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useWallet } from '@solana/wallet-adapter-react'
 import { Transaction } from '@solana/web3.js'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { toast } from 'sonner'
+import { Loader2, UserCheck, UserX, FileText, AlertCircle, XCircle } from 'lucide-react'
+import { useTransaction } from '@/hooks/useTransaction'
+import { format } from 'date-fns'
+import { zhTW } from 'date-fns/locale'
 
 interface Application {
   publicKey: string
-  listing: string
   applicant: string
+  tenantAttest: string
   status: number
   createdAt: number
-  listingInfo?: {
-    publicKey: string
-    address: string
-    rent: string
-    deposit: string
-    metadata?: {
-      basic?: {
-        title: string
-      }
-    }
-  }
   message?: {
     applicant?: {
-      occupation: string
-      company_type: string
-      birth_date: string
-      gender: string
+      name?: string
+      occupation?: string
+      company_type?: string
+      birth_date?: string
+      gender?: string
     }
     preferences?: {
-      move_in_date: string
-      lease_term_months: number
+      move_in_date?: string
+      lease_term_months?: number
     }
     message?: string
   }
+  ipfsHash?: string
 }
 
-type FilterStatus = 'all' | '0' | '1' | '2'
+interface Listing {
+  publicKey: string
+  address: string
+  rent: string
+  deposit: string
+  status: number
+  hasActiveLease: boolean
+  hasApprovedApplication: boolean
+  metadata?: {
+    basic?: {
+      title?: string
+    }
+  }
+}
 
-export default function ApplicationsPage() {
-  useAuthStore()
+export default function ManageApplicationsPage() {
+  const { publicKey } = useWallet()
+  const { listingId } = useParams<{ listingId: string }>()
+  const navigate = useNavigate()
+  const [listing, setListing] = useState<Listing | null>(null)
   const [applications, setApplications] = useState<Application[]>([])
   const [loading, setLoading] = useState(true)
-  const [cancellingId, setCancellingId] = useState<string | null>(null)
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
+  const [processingId, setProcessingId] = useState<string | null>(null)
+  const [createLeaseOpen, setCreateLeaseOpen] = useState(false)
+  const [selectedApplicant, setSelectedApplicant] = useState<string>('')
+  const [leaseForm, setLeaseForm] = useState({
+    startDate: '',
+    endDate: '',
+    paymentDay: '1',
+    terms: ''
+  })
 
-  const cancelTransaction = useTransaction({
-    onSuccess: async () => {
-      toast.success('申請已成功撤回')
+  const approveTransaction = useTransaction({
+    onSuccess: () => {
+      toast.success('申請已批准')
       fetchApplications()
-      setCancellingId(null)
+      fetchListing()
+      setProcessingId(null)
     },
     onError: () => {
-      setCancellingId(null)
+      setProcessingId(null)
+    }
+  })
+
+  const rejectTransaction = useTransaction({
+    onSuccess: () => {
+      toast.success('申請已拒絕')
+      fetchApplications()
+      setProcessingId(null)
+    },
+    onError: () => {
+      setProcessingId(null)
+    }
+  })
+
+  const cancelApprovedTransaction = useTransaction({
+    onSuccess: () => {
+      toast.success('已取消核准的申請')
+      fetchApplications()
+      fetchListing()
+      setProcessingId(null)
+    },
+    onError: () => {
+      setProcessingId(null)
+    }
+  })
+
+  const createLeaseTransaction = useTransaction({
+    onSuccess: () => {
+      toast.success('租約已創建，等待承租人簽署')
+      setCreateLeaseOpen(false)
+      navigate('/manage-leases')
+    },
+    onError: () => {
+      setProcessingId(null)
     }
   })
 
   useEffect(() => {
-    fetchApplications()
-  }, [])
+    if (listingId) {
+      fetchListing()
+      fetchApplications()
+    }
+  }, [listingId])
+
+  const fetchListing = async () => {
+    try {
+      const response = await fetch(`/api/listings/${listingId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setListing(data)
+      }
+    } catch (error) {
+      console.error('Error fetching listing:', error)
+    }
+  }
 
   const fetchApplications = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/applications/my', {
+      const response = await fetch(`/api/applications/listing/${listingId}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
         }
@@ -82,17 +151,18 @@ export default function ApplicationsPage() {
       }
     } catch (error) {
       console.error('Error fetching applications:', error)
+      toast.error('無法載入申請列表')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleCancelApplication = useCallback(async (applicationId: string) => {
+  const handleApprove = useCallback(async (applicant: string) => {
     try {
-      setCancellingId(applicationId)
-
-      const response = await fetch(`/api/applications/${applicationId}`, {
-        method: 'DELETE',
+      setProcessingId(applicant)
+      
+      const response = await fetch(`/api/applications/${listingId}/approve/${applicant}`, {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
         }
@@ -100,175 +170,128 @@ export default function ApplicationsPage() {
 
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || 'Failed to cancel application')
+        throw new Error(error.error || 'Failed to approve')
+      }
+
+      const { transaction: serializedTx } = await response.json()
+      const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
+      
+      await approveTransaction.executeTransaction(tx)
+    } catch (error) {
+      console.error('Error approving:', error)
+      toast.error(error instanceof Error ? error.message : '批准失敗')
+      setProcessingId(null)
+    }
+  }, [listingId])
+
+  const handleReject = useCallback(async (applicant: string) => {
+    try {
+      setProcessingId(applicant)
+      
+      const response = await fetch(`/api/applications/${listingId}/reject/${applicant}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
+        }
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to reject')
+      }
+
+      const { transaction: serializedTx } = await response.json()
+      const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
+      
+      await rejectTransaction.executeTransaction(tx)
+    } catch (error) {
+      console.error('Error rejecting:', error)
+      toast.error(error instanceof Error ? error.message : '拒絕失敗')
+      setProcessingId(null)
+    }
+  }, [listingId])
+
+  const handleCancelApproved = useCallback(async (applicant: string) => {
+    try {
+      setProcessingId(applicant)
+      
+      const response = await fetch(`/api/applications/${listingId}/cancel-approved/${applicant}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`
+        }
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to cancel approved application')
+      }
+
+      const { transaction: serializedTx } = await response.json()
+      const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
+      
+      await cancelApprovedTransaction.executeTransaction(tx)
+    } catch (error) {
+      console.error('Error cancelling approved application:', error)
+      toast.error(error instanceof Error ? error.message : '取消失敗')
+      setProcessingId(null)
+    }
+  }, [listingId])
+
+  const handleCreateLease = async () => {
+    try {
+      setProcessingId(selectedApplicant)
+      
+      const contract = {
+        version: '1.0',
+        createdAt: new Date().toISOString(),
+        listing: listingId,
+        landlord: publicKey?.toString(),
+        tenant: selectedApplicant,
+        terms: leaseForm.terms,
+        startDate: leaseForm.startDate,
+        endDate: leaseForm.endDate,
+        paymentDay: parseInt(leaseForm.paymentDay),
+        rent: listing?.rent,
+        deposit: listing?.deposit
+      }
+
+      const response = await fetch('/api/leases/create', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          listing: listingId,
+          applicant: selectedApplicant,
+          startDate: Math.floor(new Date(leaseForm.startDate).getTime() / 1000),
+          endDate: Math.floor(new Date(leaseForm.endDate).getTime() / 1000),
+          paymentDay: parseInt(leaseForm.paymentDay),
+          contract
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to create lease')
       }
 
       const { transaction: serializedTx, cleanup } = await response.json()
       const tx = Transaction.from(Buffer.from(serializedTx, 'base64'))
 
-      if (cleanup?.messageIpfsHash) {
-        cancelTransaction.updateCleanupInfo({
-          ipfsHashes: [cleanup.messageIpfsHash]
+      if (cleanup?.contractHash) {
+        createLeaseTransaction.updateCleanupInfo({
+          ipfsHashes: [cleanup.contractHash]
         })
       }
-
-      await cancelTransaction.executeTransaction(tx)
-
-      if (cleanup?.messageIpfsHash) {
-        try {
-          await fetch('/api/cleanup/transaction-failed', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('zuvi-auth-token')}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              ipfsHashes: [cleanup.messageIpfsHash]
-            })
-          })
-        } catch (cleanupError) {
-          console.error('Cleanup succeeded after transaction:', cleanupError)
-        }
-      }
-
+      
+      await createLeaseTransaction.executeTransaction(tx)
     } catch (error) {
-      console.error('Error cancelling application:', error)
-      toast.error(error instanceof Error ? error.message : '撤回申請失敗')
-      setCancellingId(null)
+      console.error('Error creating lease:', error)
+      toast.error(error instanceof Error ? error.message : '創建租約失敗')
+      setProcessingId(null)
     }
-  }, [cancelTransaction])
-
-  const toggleExpanded = (applicationId: string) => {
-    const newExpanded = new Set(expandedCards)
-    if (newExpanded.has(applicationId)) {
-      newExpanded.delete(applicationId)
-    } else {
-      newExpanded.add(applicationId)
-    }
-    setExpandedCards(newExpanded)
-  }
-
-  const filteredApplications = applications.filter(app => {
-    if (filterStatus === 'all') return true
-    return app.status.toString() === filterStatus
-  })
-
-  const getStatusCount = (status: FilterStatus) => {
-    if (status === 'all') return applications.length
-    return applications.filter(app => app.status.toString() === status).length
-  }
-
-  const getStatusLabel = (status: FilterStatus) => {
-    switch (status) {
-      case 'all': return `全部 (${getStatusCount(status)})`
-      case '0': return `待審核 (${getStatusCount(status)})`
-      case '1': return `已核准 (${getStatusCount(status)})`
-      case '2': return `已拒絕 (${getStatusCount(status)})`
-      default: return '全部'
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        {[...Array(3)].map((_, i) => (
-          <Card key={i} className="animate-pulse">
-            <CardHeader>
-              <div className="h-6 bg-muted rounded w-3/4"></div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="h-4 bg-muted rounded w-1/2"></div>
-                <div className="h-4 bg-muted rounded w-1/3"></div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold">我的申請</h1>
-        <p className="text-muted-foreground">查看您提交的租賃申請狀態</p>
-      </div>
-
-      <div className="flex justify-between items-center">
-        <div className="w-48">
-          <Select value={filterStatus} onValueChange={(value: FilterStatus) => setFilterStatus(value)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{getStatusLabel('all')}</SelectItem>
-              <SelectItem value="0">{getStatusLabel('0')}</SelectItem>
-              <SelectItem value="1">{getStatusLabel('1')}</SelectItem>
-              <SelectItem value="2">{getStatusLabel('2')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        {filteredApplications.length === 0 ? (
-          <div className="text-center py-12">
-            {filterStatus === 'all' ? (
-              <>
-                <FileText className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">還沒有申請記錄</h3>
-                <p className="text-muted-foreground mb-4">
-                  瀏覽房源並提交您的第一個租賃申請
-                </p>
-                <Button asChild>
-                  <Link to="/">瀏覽房源</Link>
-                </Button>
-              </>
-            ) : (
-              <>
-                <Clock className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">沒有符合條件的申請</h3>
-              </>
-            )}
-          </div>
-        ) : (
-          filteredApplications.map((application) => (
-            <ApplicationCard
-              key={application.publicKey}
-              application={application}
-              isExpanded={expandedCards.has(application.publicKey)}
-              onToggleExpanded={() => toggleExpanded(application.publicKey)}
-              onCancel={handleCancelApplication}
-              isCancelling={cancellingId === application.publicKey}
-            />
-          ))
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ApplicationCard({
-  application,
-  isExpanded,
-  onToggleExpanded,
-  onCancel,
-  isCancelling
-}: {
-  application: Application
-  isExpanded: boolean
-  onToggleExpanded: () => void
-  onCancel: (id: string) => void
-  isCancelling: boolean
-}) {
-  const formatPrice = (price: string) => {
-    const num = parseInt(price) / 1_000_000
-    return new Intl.NumberFormat('zh-TW').format(num)
-  }
-
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleDateString('zh-TW')
   }
 
   const getStatusBadge = (status: number) => {
@@ -276,171 +299,350 @@ function ApplicationCard({
       case 0:
         return <Badge variant="secondary">待審核</Badge>
       case 1:
-        return <Badge variant="default">已核准</Badge>
+        return <Badge variant="default">已批准</Badge>
       case 2:
         return <Badge variant="destructive">已拒絕</Badge>
       default:
-        return <Badge variant="secondary">未知</Badge>
+        return <Badge variant="outline">未知</Badge>
     }
   }
 
+  const pendingApplications = applications.filter(app => app.status === 0)
+  const approvedApplications = applications.filter(app => app.status === 1)
+  const rejectedApplications = applications.filter(app => app.status === 2)
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
+  }
+
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center space-x-2">
-            <FileText className="h-5 w-5" />
-            <span>{application.listingInfo?.metadata?.basic?.title || '房源申請'}</span>
-          </CardTitle>
-          <div className="flex items-center space-x-2">
-            {getStatusBadge(application.status)}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onToggleExpanded}
-              className="h-8 w-8 p-0"
-            >
-              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
-        <div className="flex items-center text-muted-foreground">
-          <MapPin className="h-4 w-4 mr-2" />
-          <span>{application.listingInfo?.address}</span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <span className="text-muted-foreground">月租金：</span>
-            <span className="font-semibold">
-              ${application.listingInfo?.rent ? formatPrice(application.listingInfo.rent) : 'N/A'} USDC
-            </span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">押金：</span>
-            <span className="font-semibold">
-              ${application.listingInfo?.deposit ? formatPrice(application.listingInfo.deposit) : 'N/A'} USDC
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center text-sm text-muted-foreground">
-          <Calendar className="h-4 w-4 mr-2" />
-          <span>申請日期：{formatDate(application.createdAt)}</span>
-        </div>
-
-        {isExpanded && application.message && (
-          <div className="border-t pt-4 space-y-4">
-            {application.message.applicant && (
-              <div>
-                <h4 className="font-medium flex items-center mb-2">
-                  <User className="h-4 w-4 mr-2" />
-                  申請人資訊
-                </h4>
-                <div className="grid grid-cols-2 gap-3 text-sm bg-muted/50 p-3 rounded-lg">
-                  <div>
-                    <span className="text-muted-foreground">職業：</span>
-                    <span>{application.message.applicant.occupation}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">工作性質：</span>
-                    <span>{application.message.applicant.company_type}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">出生年月：</span>
-                    <span>{application.message.applicant.birth_date}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">性別：</span>
-                    <span>{application.message.applicant.gender}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {application.message.preferences && (
-              <div>
-                <h4 className="font-medium flex items-center mb-2">
-                  <Briefcase className="h-4 w-4 mr-2" />
-                  租賃偏好
-                </h4>
-                <div className="grid grid-cols-2 gap-3 text-sm bg-muted/50 p-3 rounded-lg">
-                  <div>
-                    <span className="text-muted-foreground">期望入住：</span>
-                    <span>{application.message.preferences.move_in_date}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">期望租期：</span>
-                    <span>{application.message.preferences.lease_term_months} 個月</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {application.message.message && (
-              <div>
-                <h4 className="font-medium mb-2">自我介紹</h4>
-                <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg whitespace-pre-line">
-                  {application.message.message}
-                </p>
-              </div>
-            )}
+    <div className="container mx-auto py-8">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold mb-2">管理申請</h1>
+        {listing && (
+          <div className="text-muted-foreground">
+            <p>{listing.metadata?.basic?.title || listing.address}</p>
+            <div className="flex gap-4 mt-2">
+              <span>月租: ${parseInt(listing.rent) / 1000000} USDC</span>
+              <span>押金: ${parseInt(listing.deposit) / 1000000} USDC</span>
+              {listing.hasActiveLease && (
+                <Badge variant="secondary">已有生效租約</Badge>
+              )}
+              {listing.hasApprovedApplication && !listing.hasActiveLease && (
+                <Badge variant="default">有已核准申請</Badge>
+              )}
+            </div>
           </div>
         )}
+      </div>
 
-        <div className="flex justify-between items-center pt-2">
-          <Button variant="outline" asChild>
-            <Link to={`/listing/${application.listingInfo?.publicKey || application.listing}`}>
-              <Home className="h-4 w-4 mr-2" />
-              查看房源
-            </Link>
-          </Button>
+      <Tabs defaultValue="pending" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="pending">
+            待審核 ({pendingApplications.length})
+          </TabsTrigger>
+          <TabsTrigger value="approved">
+            已批准 ({approvedApplications.length})
+          </TabsTrigger>
+          <TabsTrigger value="rejected">
+            已拒絕 ({rejectedApplications.length})
+          </TabsTrigger>
+        </TabsList>
 
-          {(application.status === 0 || application.status === 2) && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isCancelling}
-                >
-                  {isCancelling ? (
-                    <>
-                      <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                      撤回中...
-                    </>
-                  ) : (
-                    <>
-                      <X className="h-4 w-4 mr-2" />
-                      撤回申請
-                    </>
+        <TabsContent value="pending" className="space-y-4">
+          {pendingApplications.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                暫無待審核的申請
+              </CardContent>
+            </Card>
+          ) : (
+            pendingApplications.map((app) => (
+              <Card key={app.publicKey}>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg">
+                        {app.message?.applicant?.name || '申請人'}
+                      </CardTitle>
+                      <CardDescription>
+                        申請時間: {format(new Date(app.createdAt * 1000), 'yyyy年MM月dd日 HH:mm', { locale: zhTW })}
+                      </CardDescription>
+                    </div>
+                    {getStatusBadge(app.status)}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {app.message && (
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      {app.message.applicant && (
+                        <>
+                          <div>
+                            <span className="text-muted-foreground">職業: </span>
+                            {app.message.applicant.occupation}
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">公司類型: </span>
+                            {app.message.applicant.company_type}
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">性別: </span>
+                            {app.message.applicant.gender}
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">生日: </span>
+                            {app.message.applicant.birth_date}
+                          </div>
+                        </>
+                      )}
+                      {app.message.preferences && (
+                        <>
+                          <div>
+                            <span className="text-muted-foreground">希望入住日: </span>
+                            {app.message.preferences.move_in_date}
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">租期: </span>
+                            {app.message.preferences.lease_term_months} 個月
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )}
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>確認撤回申請</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    撤回申請後將無法復原，確定要撤回這個申請嗎？
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>取消</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => onCancel(application.publicKey)}
-                    disabled={isCancelling} 
-                  >
-                    確認撤回
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                  {app.message?.message && (
+                    <div className="p-3 bg-muted rounded-lg">
+                      <p className="text-sm">{app.message.message}</p>
+                    </div>
+                  )}
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      onClick={() => handleApprove(app.applicant)}
+                      disabled={processingId === app.applicant || listing?.hasApprovedApplication}
+                      size="sm"
+                    >
+                      {processingId === app.applicant ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <UserCheck className="h-4 w-4 mr-2" />
+                      )}
+                      批准
+                    </Button>
+                    <Button
+                      onClick={() => handleReject(app.applicant)}
+                      disabled={processingId === app.applicant}
+                      variant="destructive"
+                      size="sm"
+                    >
+                      {processingId === app.applicant ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <UserX className="h-4 w-4 mr-2" />
+                      )}
+                      拒絕
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
           )}
-        </div>
-      </CardContent>
-    </Card>
+        </TabsContent>
+
+        <TabsContent value="approved" className="space-y-4">
+          {approvedApplications.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                暫無已批准的申請
+              </CardContent>
+            </Card>
+          ) : (
+            approvedApplications.map((app) => (
+              <Card key={app.publicKey}>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg">
+                        {app.message?.applicant?.name || '申請人'}
+                      </CardTitle>
+                      <CardDescription>
+                        批准時間: {format(new Date(app.createdAt * 1000), 'yyyy年MM月dd日 HH:mm', { locale: zhTW })}
+                      </CardDescription>
+                    </div>
+                    {getStatusBadge(app.status)}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {app.message && (
+                    <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                      {app.message.preferences && (
+                        <>
+                          <div>
+                            <span className="text-muted-foreground">希望入住日: </span>
+                            {app.message.preferences.move_in_date}
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">租期: </span>
+                            {app.message.preferences.lease_term_months} 個月
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {listing?.hasActiveLease ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <AlertCircle className="h-4 w-4" />
+                      已有生效的租約
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => {
+                          setSelectedApplicant(app.applicant)
+                          setCreateLeaseOpen(true)
+                        }}
+                        disabled={processingId === app.applicant}
+                        size="sm"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        創建租約
+                      </Button>
+                      <Button
+                        onClick={() => handleCancelApproved(app.applicant)}
+                        disabled={processingId === app.applicant}
+                        variant="outline"
+                        size="sm"
+                      >
+                        {processingId === app.applicant ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <XCircle className="h-4 w-4 mr-2" />
+                        )}
+                        取消核准
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </TabsContent>
+
+        <TabsContent value="rejected" className="space-y-4">
+          {rejectedApplications.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                暫無已拒絕的申請
+              </CardContent>
+            </Card>
+          ) : (
+            rejectedApplications.map((app) => (
+              <Card key={app.publicKey}>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg">
+                        {app.message?.applicant?.name || '申請人'}
+                      </CardTitle>
+                      <CardDescription>
+                        拒絕時間: {format(new Date(app.createdAt * 1000), 'yyyy年MM月dd日 HH:mm', { locale: zhTW })}
+                      </CardDescription>
+                    </div>
+                    {getStatusBadge(app.status)}
+                  </div>
+                </CardHeader>
+              </Card>
+            ))
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={createLeaseOpen} onOpenChange={setCreateLeaseOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>創建租約</DialogTitle>
+            <DialogDescription>
+              設定租約條款，創建後需要承租人簽署才能生效
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="startDate">開始日期</Label>
+                <Input
+                  id="startDate"
+                  type="date"
+                  value={leaseForm.startDate}
+                  onChange={(e) => setLeaseForm({ ...leaseForm, startDate: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="endDate">結束日期</Label>
+                <Input
+                  id="endDate"
+                  type="date"
+                  value={leaseForm.endDate}
+                  onChange={(e) => setLeaseForm({ ...leaseForm, endDate: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="paymentDay">每月繳費日</Label>
+              <Select
+                value={leaseForm.paymentDay}
+                onValueChange={(value) => setLeaseForm({ ...leaseForm, paymentDay: value })}
+              >
+                <SelectTrigger id="paymentDay">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                    <SelectItem key={day} value={day.toString()}>
+                      每月 {day} 日
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="terms">特別條款</Label>
+              <Textarea
+                id="terms"
+                placeholder="輸入任何特別條款或備註..."
+                value={leaseForm.terms}
+                onChange={(e) => setLeaseForm({ ...leaseForm, terms: e.target.value })}
+                rows={4}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
+              <div>
+                <p className="text-sm text-muted-foreground">月租</p>
+                <p className="font-semibold">${listing && parseInt(listing.rent) / 1000000} USDC</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">押金</p>
+                <p className="font-semibold">${listing && parseInt(listing.deposit) / 1000000} USDC</p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateLeaseOpen(false)}>
+              取消
+            </Button>
+            <Button 
+              onClick={handleCreateLease}
+              disabled={!leaseForm.startDate || !leaseForm.endDate || processingId !== null}
+            >
+              {processingId !== null && (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              )}
+              創建租約
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }

@@ -27,7 +27,6 @@ export const errorHandler = (
     return;
   }
 
-  // Solana/Anchor 錯誤處理
   if (err.message.includes('E001')) {
     res.status(400).json({ error: '系統尚未初始化' });
     return;
@@ -76,8 +75,59 @@ export const errorHandler = (
     res.status(400).json({ error: '重複申請' });
     return;
   }
+  if (err.message.includes('E013')) {
+    res.status(400).json({ error: '租約已存在' });
+    return;
+  }
+  if (err.message.includes('E014')) {
+    res.status(400).json({ error: '支付日尚未到期' });
+    return;
+  }
+  if (err.message.includes('E015')) {
+    res.status(400).json({ error: '租約已結束' });
+    return;
+  }
+  if (err.message.includes('E016')) {
+    res.status(400).json({ error: '金額不匹配' });
+    return;
+  }
+  if (err.message.includes('E017')) {
+    res.status(400).json({ error: '爭議已解決' });
+    return;
+  }
+  if (err.message.includes('E018')) {
+    res.status(403).json({ error: '非仲裁者' });
+    return;
+  }
+  if (err.message.includes('E019')) {
+    res.status(400).json({ error: '押金已釋放' });
+    return;
+  }
+  if (err.message.includes('E020')) {
+    res.status(400).json({ error: '無效的日期' });
+    return;
+  }
+  if (err.message.includes('E021')) {
+    res.status(400).json({ error: '無效的費率' });
+    return;
+  }
+  if (err.message.includes('E022')) {
+    res.status(400).json({ error: '無效的押金金額' });
+    return;
+  }
+  if (err.message.includes('E023')) {
+    res.status(400).json({ error: '無效的支付日' });
+    return;
+  }
+  if (err.message.includes('E024')) {
+    res.status(400).json({ error: '無效的爭議原因' });
+    return;
+  }
+  if (err.message.includes('E025')) {
+    res.status(400).json({ error: '無法對自己的房源申請' });
+    return;
+  }
 
-  // 預設錯誤
   res.status(500).json({
     error: 'Internal server error',
     message: process.env.NODE_ENV === 'development' ? err.message : undefined

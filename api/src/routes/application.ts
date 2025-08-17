@@ -140,6 +140,99 @@ router.delete('/:applicationId', async (req: AuthRequest, res, next) => {
   }
 });
 
+router.post('/:listing/cancel-approved/:applicant', async (req: AuthRequest, res, next) => {
+  try {
+    const { listing, applicant } = req.params;
+    const userPublicKey = new PublicKey(req.user!.publicKey);
+    const listingPubkey = new PublicKey(listing);
+    const applicantPubkey = new PublicKey(applicant);
+
+    const listingAccount = await program.account.listing.fetch(listingPubkey);
+    
+    const isOwner = listingAccount.owner.equals(userPublicKey);
+    const isApplicant = applicantPubkey.equals(userPublicKey);
+    
+    if (!isOwner && !isApplicant) {
+      throw new ApiError(403, 'Not authorized to cancel this application');
+    }
+
+    const applications = await program.account.application.all([
+      {
+        memcmp: {
+          offset: 8,
+          bytes: listingPubkey.toBase58()
+        }
+      },
+      {
+        memcmp: {
+          offset: 8 + 32,
+          bytes: applicantPubkey.toBase58()
+        }
+      }
+    ]);
+
+    if (applications.length === 0) {
+      throw new ApiError(404, 'Application not found');
+    }
+
+    const application = applications[0];
+    if (application.account.status !== 1) {
+      throw new ApiError(400, 'Application is not approved');
+    }
+
+    if (listingAccount.hasActiveLease) {
+      throw new ApiError(400, 'Cannot cancel - lease already active');
+    }
+
+    const applicationCreatedAt = application.account.createdAt;
+
+    const tx = await program.methods
+      .cancelApprovedApplication(
+        applicantPubkey,
+        applicationCreatedAt
+      )
+      .accountsStrict({
+        listing: listingPubkey,
+        application: application.publicKey,
+        signer: userPublicKey,
+      })
+      .transaction();
+
+    const { blockhash } = await program.provider.connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = userPublicKey;
+
+    const serialized = tx.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false
+    });
+
+    if (isOwner) {
+      broadcastToUser(applicant, {
+        type: 'approved_application_cancelled',
+        listing: listing,
+        cancelledBy: 'landlord',
+        message: '房東已取消您的已核准申請'
+      });
+    } else {
+      broadcastToUser(listingAccount.owner.toString(), {
+        type: 'approved_application_cancelled',
+        listing: listing,
+        applicant: applicant,
+        cancelledBy: 'tenant',
+        message: '承租人已取消已核准的申請'
+      });
+    }
+
+    res.json({
+      success: true,
+      transaction: serialized.toString('base64')
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/listing/:listing', async (req: AuthRequest, res, next) => {
   try {
     const { listing } = req.params;
@@ -210,44 +303,33 @@ router.get('/my', async (req: AuthRequest, res, next) => {
 
     const enriched = await Promise.all(
       applications.map(async (app) => {
-        const listing = await program.account.listing.fetch(app.account.listing);
-        const listingIpfsHash = StorageService.bytesToIpfsHash(listing.metadataUri);
-
+        const listingAccount = await program.account.listing.fetch(app.account.listing);
+        
         let listingMetadata = null;
         try {
+          const listingIpfsHash = StorageService.bytesToIpfsHash(listingAccount.metadataUri);
           listingMetadata = await StorageService.getJSON(listingIpfsHash);
-        } catch (error) {
-          console.error(`Failed to fetch listing metadata:`, error);
-          listingMetadata = { error: 'Unable to fetch listing details' };
-        }
+        } catch {}
 
-        const appIpfsHash = StorageService.bytesToIpfsHash(app.account.messageUri);
         let message = null;
-
+        const ipfsHash = StorageService.bytesToIpfsHash(app.account.messageUri);
         try {
-          message = await StorageService.getJSON(appIpfsHash);
-        } catch (error) {
-          console.error(`Failed to fetch application message:`, error);
-          message = {
-            error: 'Unable to fetch application details',
-            ipfsHash: appIpfsHash
-          };
-        }
+          message = await StorageService.getJSON(ipfsHash);
+        } catch {}
 
         return {
           publicKey: app.publicKey.toString(),
-          listing: app.account.listing.toString(),
-          applicant: app.account.applicant.toString(),
-          status: app.account.status,
-          createdAt: app.account.createdAt.toNumber(),
-          listingInfo: {
+          listing: {
             publicKey: app.account.listing.toString(),
-            address: Buffer.from(listing.address).toString('utf8').replace(/\0/g, ''),
-            rent: listing.rent.toString(),
-            deposit: listing.deposit.toString(),
+            address: Buffer.from(listingAccount.address).toString('utf8').replace(/\0/g, ''),
+            rent: listingAccount.rent.toString(),
+            deposit: listingAccount.deposit.toString(),
             metadata: listingMetadata
           },
-          message
+          status: app.account.status,
+          createdAt: app.account.createdAt.toNumber(),
+          message,
+          ipfsHash
         };
       })
     );
@@ -412,5 +494,5 @@ router.post('/:listing/reject/:applicant', async (req: AuthRequest, res, next) =
     next(error);
   }
 });
-
+  
 export { router as applicationRouter };
